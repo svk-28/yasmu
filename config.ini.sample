@@ -1,0 +1,35 @@
+[Checks]
+process = yes
+users = yes
+network = yes
+ports = yes
+web = yes
+cron = yes
+
+[Notify]
+email = yes
+matrix = no
+webhook = no
+
+[Notify.email]
+server = smtp.server.com 
+port = 465
+user = user
+password = 12345678
+
+[Notify.matrix]
+server = matrix.server.com
+user = user
+password = 12345678
+chatid = 1qu2ueu4383jr4o83
+
+[Notify.webhook]
+url = https://web.server.com/hook
+user = user
+password = 12345678
+
+
+[Checks.web]
+url = https://server.com
+url = https://git.server.com
+urs = ...
