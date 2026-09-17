@@ -1,18 +1,77 @@
+// ************************************************
+// Configuration management module.
+// Creating/reading a configuration file.
+// Displaying settings on the screen.package main
+// ************************************************
+
 package main
 
 import (
     "fmt"
-
+    "os"
     "gopkg.in/ini.v1"
 )
 
-// Config — корень конфигурации
+var ConfigTemplate = `
+[Daemon]
+checktimeout = 60
+logfile = watchdog.log
+workdir = ./
+
+[Checks]
+process = yes
+users = yes
+network = yes
+ports = yes
+web = no
+cron = yes
+files = no
+
+[Notify]
+email = no
+matrix = no
+webhook = no
+
+[Notify.email]
+server = smtp.server.com 
+port = 465
+user = user
+password = 12345678
+
+[Notify.matrix]
+server = matrix.server.com
+user = user
+password = 12345678
+chatid = 1qu2ueu4383jr4o83
+
+[Notify.webhook]
+url = https://web.server.com/hook
+user = user
+password = 12345678
+
+
+[Checks.web]
+url = https://server.com
+url = https://git.server.com
+urs = ...
+
+[Check.files]
+path = /etc
+path = ...
+`
+type Daemon struct {
+    	CheckTimeout int    `ini:"checktimeout"`
+    	LogFile      string `ini:"logfile"`
+    	WorkDir      string `ini:"workdir"`
+     PidFile      string `ini:"pidfile"`
+}
+
 type Config struct {
+    Daemon  Daemon  `ini:"Daemon"`
 	Checks  Checks  `ini:"Checks"`
 	Notify  Notify  `ini:"Notify"`
 }
 
-// Checks — секция [Checks]
 type Checks struct {
 	Process bool `ini:"process"`
 	Users   bool `ini:"users"`
@@ -20,20 +79,16 @@ type Checks struct {
 	Ports   bool `ini:"ports"`
 	Web     bool `ini:"web"`
 	Cron    bool `ini:"cron"`
+	Files   bool `ini:"files"`
 
-	// Вложенная секция [Checks.web] — имя поля должно совпадать с "web"
 	WebCheck WebCheckConfig `ini:"web"`
+    FilesPath FilesConfig `ini:"files"`
 }
 
-// WebConfig — секция [Checks.web]
 type WebCheckConfig struct {
-	// Массив URL из повторяющихся ключей "url"
-	// ini.v1 не мапит дубликаты в []string автоматически,
-	// поэтому поле читаем вручную через ValueWithShadows()
 	URLs []string `ini:"-"`
 }
 
-// Notify — секция [Notify]
 type Notify struct {
 	Email   bool `ini:"email"`
 	Matrix  bool `ini:"matrix"`
@@ -44,7 +99,6 @@ type Notify struct {
     WebhookCfg WebhookConfig `ini:"webhook"`
 }
 
-// EmailConfig — секция [Notify.email]
 type EmailConfig struct {
 	Server   string `ini:"server"`
 	Port     int    `ini:"port"`
@@ -52,7 +106,6 @@ type EmailConfig struct {
 	Password string `ini:"password"`
 }
 
-// MatrixConfig — секция [Notify.matrix]
 type MatrixConfig struct {
 	Server   string `ini:"server"`
 	User     string `ini:"user"`
@@ -66,6 +119,9 @@ type WebhookConfig struct {
 	Password string `ini:"password"`
 }
 
+type FilesConfig struct {
+    Path []string `ini:"path"`
+}
 
 func ConfigLoad(configFileName string) (*Config, error) {
 	cfg, err := ini.LoadSources(ini.LoadOptions{
@@ -78,11 +134,11 @@ func ConfigLoad(configFileName string) (*Config, error) {
 	}
 
 	var c Config
-	// if err := cfg.MapTo(&c); err != nil {
-		// return nil, fmt.Errorf("map ini: %w", err)
-	// }
 
     // 1. Маппим корневые секции
+    if err := cfg.Section("Daemon").MapTo(&c.Daemon); err != nil {
+        return nil, fmt.Errorf("map Daemon: %w", err)
+    }
     if err := cfg.Section("Checks").MapTo(&c.Checks); err != nil {
         return nil, fmt.Errorf("map Checks: %w", err)
     }
@@ -105,10 +161,15 @@ func ConfigLoad(configFileName string) (*Config, error) {
 	urls := cfg.Section("Checks.web").Key("url").ValueWithShadows()
 	c.Checks.WebCheck.URLs = urls
 
+	// Отдельно вычитываем повторяющиеся path из [Checks.files]
+	path := cfg.Section("Checks.files").Key("path").ValueWithShadows()
+	c.Checks.FilesPath.Path = path
+
 	return &c, nil
 }
 
 func ConfigShow(cfg *Config) {
+   	fmt.Printf("Пауза между проверками при запуске как службы (демон) в сек.: %v\n", cfg.Daemon.CheckTimeout)
    	fmt.Printf("Проверять процессы (processes): %v\n", cfg.Checks.Process)
 	fmt.Printf("Проверять пользователей (users): %v\n", cfg.Checks.Users)
 	fmt.Printf("Проверять соединения (network): %v\n", cfg.Checks.Network)
@@ -136,5 +197,18 @@ func ConfigShow(cfg *Config) {
 		cfg.Notify.WebhookCfg.User,
 		cfg.Notify.WebhookCfg.Password,
 	)
+}
+
+func ConfigMake(cfgTmpl string, cfgFileName string) {
+    file, err := os.Create(cfgFileName)
+     
+    if err != nil{
+        fmt.Println("Unable to create file:", err) 
+        os.Exit(1) 
+    }
+    defer file.Close() 
+    file.WriteString(cfgTmpl)
+     
+    fmt.Printf("Config file '%s' has been created.\n", cfgFileName)
 }
 

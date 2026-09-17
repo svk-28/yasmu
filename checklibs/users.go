@@ -86,4 +86,3 @@ func UsersSudoersCheck() {
     fmt.Println("\nRunning checklibs/UsersSudoersCheck")
 }
 
-
