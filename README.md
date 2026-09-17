@@ -8,6 +8,7 @@ A utility for monitoring system integrity. And for web monitoring of websites av
 * Network connections
 * Cron (crontab) files
 * URL available
+* Directory and files (creating, deleting and changes)
 
 ## Notifaction
 
@@ -21,4 +22,3 @@ A utility for monitoring system integrity. And for web monitoring of websites av
 Sergey Kalinin - author
 
 Home page: [nuk-svk.ru](https://nuk-svk.ru). E-mail: [svk@nuk-svk.ru](svk@nuk-svk.ru)
-

@@ -71,8 +71,10 @@ func runChecks(cfg *Config) {
             log.Println("No files changes have been recorded.")
         }
     }
+    
     if len(summaryReport.String()) != 0 {
         log.Println("Result of all checks:", summaryReport.String())
+        SendNotifycation(cfg, summaryReport.String())
     }
 }
 
@@ -126,6 +128,19 @@ func DaemonRun(cfg *Config) {
     }
 }
 
+func SendNotifycation(cfg *Config, msg string) {
+        // Sending notification
+    if cfg.Notify.Email {
+        notifylibs.EmailNotify()
+    }
+    if cfg.Notify.Matrix {
+        notifylibs.MatrixNotify()
+    }
+    if cfg.Notify.Webhook {
+        notifylibs.WebHookNotify()
+    }
+}
+
 func main() {
     
     flag.BoolVar(&RunAsDaemon, "daemon", false, "Run the programm as ad daemon")
@@ -158,16 +173,5 @@ func main() {
         runChecks(cfg)
     } else {
         RunService(cfg)
-    }
-
-    // Sending notification
-    if cfg.Notify.Email {
-        notifylibs.EmailNotify()
-    }
-    if cfg.Notify.Matrix {
-        notifylibs.MatrixNotify()
-    }
-    if cfg.Notify.Webhook {
-        notifylibs.WebHookNotify()
     }
 }
