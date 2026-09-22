@@ -1,8 +1,14 @@
-// ************************************************
+// *******************************************************
+// Watchdog - the utility for monitoring system integrity.
+// And for web monitoring of websites availability.
+// *******************************************************
+// Author: Sergey Kalinin
+// License: GPL v3
+// *******************************************************
 // Configuration management module.
 // Creating/reading a configuration file.
 // Displaying settings on the screen.package main
-// ************************************************
+// *******************************************************
 
 package main
 

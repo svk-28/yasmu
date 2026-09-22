@@ -1,5 +1,5 @@
 daemon:
-  check_timeout: 60
+  check_timeout: 10
   log_file: watchdog.log
   work_dir: ./
 
@@ -10,17 +10,27 @@ checks:
         enable: false
     network:
         enable: false
-    ports: false
+    ports:
+        enable: false
     web:
-      enable: false
+      enable: true
       urls:
-        - https://server.com
-        - https://git.server.com
+        - https://nuk-svk.ru/health
+        - https://git.nuk-svk.ru/api/healthz
+        - https://files.nuk-svk.ru/health
+        - https://chat.nuk-svk.ru
     files:
-      enable: false
+      enable: true
       paths:
-        - /etc
-        - /var/log
+        - path: /etc
+          watch: [create, modify, delete]
+        - path: /dev
+          watch: [create, delete]
+          exclude:
+            - /dev/pts
+            - /dev/tty
+    cron:
+        enable: false
 
 notify:
     email:

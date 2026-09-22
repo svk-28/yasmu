@@ -1,3 +1,13 @@
+// *******************************************************
+// Watchdog - the utility for monitoring system integrity.
+// And for web monitoring of websites availability.
+// *******************************************************
+// Author: Sergey Kalinin
+// License: GPL v3
+// *******************************************************
+// WEB (URL) checking module
+// *******************************************************
+
 package checklibs
 
 import (
