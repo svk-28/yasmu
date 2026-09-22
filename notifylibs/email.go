@@ -7,21 +7,21 @@ import (
 	"net"
 	"net/smtp"
    	"errors"
+    "time"
 )
 
 type SmtpSession struct {
-	smtpUser     string
-	smtpPassword string
-	smtpServer   string
-	smtpPort     string
+	SmtpUser     string
+	SmtpPassword string
+	SmtpServer   string
+	SmtpPort     string
 }
 
 type MailMessage struct {
-	mailFrom    string
-	mailTo      string
-	mailSubject string
-	mailMessage string
-	messageUUID string
+	MailFrom    string
+	MailTo      string
+	MailSubject string
+	MailMessage string
 }
 
 type loginAuth struct {
@@ -52,47 +52,53 @@ func (a *loginAuth) Next(fromServer []byte, more bool) ([]byte, error) {
 }
 
 
-func SendEmail(smtpSession *SmtpSession, message *MailMessage) bool {
+func EmailNotify_(smtpSession *SmtpSession, message *MailMessage) bool {
 
 	// Receiver email address.
 	to := []string{
-		message.mailTo,
+		message.MailTo,
 	}
 
-	serverName := smtpSession.smtpServer + ":" + smtpSession.smtpPort
-	// fmt.Println(serverName, smtpSession.smtpUser, smtpSession.smtpPassword)
+	serverName := smtpSession.SmtpServer + ":" + smtpSession.SmtpPort
+	log.Println("SMTP Server", serverName, smtpSession.SmtpUser, smtpSession.SmtpPassword)
 
 	conn, err := net.Dial("tcp", serverName)
 	if err != nil {
 		log.Println(err)
+        return false
 	}
 
-	c, err := smtp.NewClient(conn, smtpSession.smtpServer)
+	c, err := smtp.NewClient(conn, smtpSession.SmtpServer)
 	if err != nil {
 		log.Println(err)
+        return false
 	}
 
 	tlsconfig := &tls.Config{
-		ServerName: smtpSession.smtpServer,
+		ServerName: smtpSession.SmtpServer,
 	}
 
 	if err = c.StartTLS(tlsconfig); err != nil {
 		log.Println(err)
 	}
 
-	auth := LoginAuth(smtpSession.smtpUser, smtpSession.smtpPassword)
+	auth := LoginAuth(smtpSession.SmtpUser, smtpSession.SmtpPassword)
 
 	if err = c.Auth(auth); err != nil {
 		log.Println(err)
-	}
+        return false
+    }
 
-	msg := []byte("From: " + message.mailFrom + "\r\n" +
-		"To: " + message.mailTo + "\r\n" +
-		"Subject: " + message.mailSubject + "\r\n\r\n" +
-		message.mailMessage + "\r\n")
+	msg := []byte("From: " + message.MailFrom + "\r\n" +
+		"To: " + message.MailTo + "\r\n" +
+		"Subject: " + message.MailSubject + "\r\n\r\n" +
+		message.MailMessage + "\r\n")
+
 
 	// Sending email.
-	err = smtp.SendMail(serverName, auth, message.mailFrom, to, msg)
+	err = smtp.SendMail(serverName, auth, message.MailFrom, to, msg)
+
+    log.Println(err)
 
 	if err != nil {
 		fmt.Println(err)
@@ -104,11 +110,115 @@ func SendEmail(smtpSession *SmtpSession, message *MailMessage) bool {
 		log.Fatal(err)
 		return false
 	} else {
-		log.Println("Email", message.messageUUID, "from", message.mailFrom, "sent successfully via", smtpSession.smtpServer)
+        log.Println("Email", "from", message.MailFrom, "sent successfully via", smtpSession.SmtpServer)
 		return true
 	}
 }
 
-func EmailNotify() {
-    fmt.Println("\nRunning notifylibs/EmailNotify")
+
+func EmailNotify(smtpSession *SmtpSession, message *MailMessage) bool {
+	log.Println("\nRunning notifylibs/EmailNotify")
+
+	serverName := net.JoinHostPort(smtpSession.SmtpServer, smtpSession.SmtpPort)
+	log.Printf("SMTP Server %s, user %s", serverName, smtpSession.SmtpUser)
+
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+
+	tlsConfig := &tls.Config{
+		ServerName: smtpSession.SmtpServer,
+		MinVersion: tls.VersionTLS12,
+	}
+
+	var (
+		conn net.Conn
+		err  error
+	)
+
+	switch smtpSession.SmtpPort {
+	    case "465":
+		    conn, err = tls.DialWithDialer(dialer, "tcp", serverName, tlsConfig)
+		    if err != nil {
+			    log.Println("tls dial:", err)
+			    return false
+		    }
+	    case "587", "25", "2525":
+		    conn, err = dialer.Dial("tcp", serverName)
+		    if err != nil {
+			    log.Println("dial:", err)
+			    return false
+		    }
+	    default:
+		    log.Printf("unsupported SMTP port: %s", smtpSession.SmtpPort)
+		    return false
+	}
+	defer conn.Close()
+
+	c, err := smtp.NewClient(conn, smtpSession.SmtpServer)
+	if err != nil {
+		log.Println("new client:", err)
+		return false
+	}
+	defer c.Close()
+
+	if smtpSession.SmtpPort != "465" {
+		if err = c.StartTLS(tlsConfig); err != nil {
+			log.Println("starttls:", err)
+			return false
+		}
+	}
+
+	auth := LoginAuth(smtpSession.SmtpUser, smtpSession.SmtpPassword)
+	if err = c.Auth(auth); err != nil {
+		log.Println("auth:", err)
+		return false
+	}
+
+	// Mail from 
+	if err = c.Mail(message.MailFrom); err != nil {
+		log.Println("mail from:", err)
+		return false
+	}
+    // Mail to
+	if err = c.Rcpt(message.MailTo); err != nil {
+		log.Println("rcpt to:", err)
+		return false
+	}
+
+	// Message body
+	w, err := c.Data()
+	if err != nil {
+		log.Println("data:", err)
+		return false
+	}
+
+	body := fmt.Sprintf(
+		"From: %s\r\n"+
+			"To: %s\r\n"+
+			"Subject: %s\r\n"+
+			"MIME-Version: 1.0\r\n"+
+			"Content-Type: text/plain; charset=UTF-8\r\n"+
+			"\r\n"+
+			"%s\r\n",
+		message.MailFrom,
+		message.MailTo,
+		message.MailSubject,
+		message.MailMessage,
+	)
+
+	if _, err = w.Write([]byte(body)); err != nil {
+		log.Println("write body:", err)
+		w.Close()
+		return false
+	}
+	if err = w.Close(); err != nil {
+		log.Println("close body:", err)
+		return false
+	}
+
+	if err = c.Quit(); err != nil {
+		log.Println("quit:", err)
+	}
+
+	log.Printf("Email from %s sent successfully via %s", message.MailFrom, smtpSession.SmtpServer)
+	return true
 }

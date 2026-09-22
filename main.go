@@ -10,8 +10,12 @@ import (
     "context"
     "syscall"
     "strings"
+    // "net"
+
     "watchdog/checklibs"
     "watchdog/notifylibs"
+    "watchdog/mainlibs"
+
     "github.com/sevlyar/go-daemon"
 )
 
@@ -27,6 +31,7 @@ var (
 )
 
 var previousFileList checklibs.FileMap
+var previousUrlList checklibs.UrlMap
 
 // Runing checks
 func runChecks(cfg *Config) {
@@ -56,8 +61,19 @@ func runChecks(cfg *Config) {
 
     if cfg.Checks.Web {
         for _, v := range cfg.Checks.WebCheck.URLs {
-            fmt.Println(v)
-            checklibs.WebCheck(v)
+            log.Println(v)
+            status, response := checklibs.WebCheck(v)
+            if status {
+                log.Printf("URL %s check status is %t\n", v, status)
+                // log.Println(response)
+            } else {
+                log.Printf("URL %s check status error\n", v)
+                log.Println(response)
+                // summaryReport.WriteString(fmt.Fprintf("===\nURL %s check status error\n", v"))
+                // summaryReport.WriteString(fmt.Fprintf("%s\n\n", response))
+                fmt.Fprintf(&summaryReport, "===\nURL %s check status error\n", v)
+                fmt.Fprintf(&summaryReport, "%s\n", response)
+            }
         }
     }
 
@@ -129,9 +145,44 @@ func DaemonRun(cfg *Config) {
 }
 
 func SendNotifycation(cfg *Config, msg string) {
-        // Sending notification
+    // Sending notification
+
+    hostname, err := mainlibs.GetFQDN()
+    if err != nil {
+	    log.Fatal(err)
+    }
+    log.Println("Running host FQDN:", hostname)
+
+
     if cfg.Notify.Email {
-        notifylibs.EmailNotify()
+        var (
+            message     notifylibs.MailMessage
+            smtpSession notifylibs.SmtpSession
+        )
+        
+        log.Println("Running notifylibs/EmailNotify")
+
+
+        message.MailFrom = cfg.Notify.EmailCfg.MailFrom
+        message.MailTo = cfg.Notify.EmailCfg.MailTo
+        // %HOSTNAME% template in Subject will replace
+        message.MailSubject = strings.ReplaceAll(cfg.Notify.EmailCfg.MailSubject, "%HOSTNAME%", hostname)
+        message.MailMessage = msg
+    
+        smtpSession.SmtpServer = cfg.Notify.EmailCfg.Server
+        smtpSession.SmtpPort = cfg.Notify.EmailCfg.Port
+        smtpSession.SmtpUser = cfg.Notify.EmailCfg.User
+        smtpSession.SmtpPassword = cfg.Notify.EmailCfg.Password
+    
+        log.Println("Sending email message:", message.MailFrom, message.MailTo)
+        msgSendResult := notifylibs.EmailNotify(&smtpSession, &message)
+
+        if msgSendResult {
+            log.Println("Message send successfuly")
+        } else {
+            log.Println("Message send error")
+        }
+       
     }
     if cfg.Notify.Matrix {
         notifylibs.MatrixNotify()
@@ -148,7 +199,7 @@ func main() {
     flag.StringVar(&ConfigFile, "config", "config.ini", "Config file with full path")
     flag.BoolVar(&MakeConfig, "make-config", false, "Generate config file")
     flag.BoolFunc("version", "Version", func(s string) error {
-        fmt.Println("Version:", Version)
+        log.Println("Version:", Version)
         os.Exit(0)
         return nil
     })

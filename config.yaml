@@ -1,0 +1,47 @@
+daemon:
+  check_timeout: 60
+  log_file: watchdog.log
+  work_dir: ./
+
+checks:
+    process:
+        enable: false
+    users:
+        enable: false
+    network:
+        enable: false
+    ports: false
+    web:
+      enable: false
+      urls:
+        - https://server.com
+        - https://git.server.com
+    files:
+      enable: false
+      paths:
+        - /etc
+        - /var/log
+
+notify:
+    email:
+        enable: false
+        server: smtp.server.com
+        port: 465
+        user: user
+        password: "12345678"
+        mail_to: to@domain.com
+        mail_from: from@domain.com
+        mail_subject: "Alert message from %HOSTNAME%"
+
+    matrix:
+        enable: false
+        server: matrix.server.com
+        user: user
+        password: "12345678"
+        chat_id: 1qu2ueu4383jr4o83
+
+    webhook:
+        enable: false
+        url: https://web.server.com/hook
+        user: user
+        password: "12345678"

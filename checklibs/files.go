@@ -17,6 +17,9 @@ import (
     "sort"
     "maps"
     "strings"
+    "log"
+
+    "watchdog/mainlibs"
 )
 
 // File/Directory metadata
@@ -62,6 +65,14 @@ func PrintDiff(d DiffResult, showUnchanged bool) string {
 	sort.Strings(d.OnlyInBase)
 	sort.Strings(d.OnlyInActual)
 
+    hostname, err := mainlibs.GetFQDN()
+    if err != nil {
+        hostname = "unknow"
+        log.Println("Hostname error:", err)
+    }
+
+    fmt.Fprintf(&sb, "File changes alarm on host %s:\n", hostname)
+
 	if len(d.OnlyInBase) > 0 {
 		fmt.Fprintf(&sb, "\nDeleted (%d):\n", len(d.OnlyInBase))
 		for _, p := range d.OnlyInBase {
@@ -97,7 +108,7 @@ func PrintDiff(d DiffResult, showUnchanged bool) string {
 		}
 	}
 
-	fmt.Fprintf(&sb, "\nSummary: -%d +%d ~%d =%d\n",
+	fmt.Fprintf(&sb, "\nSummary: deleted %d, added %d, changed %d, all %d\n",
 		len(d.OnlyInBase), len(d.OnlyInActual),
 		len(d.Changed), len(d.Unchanged))
 
@@ -184,7 +195,7 @@ func FilesCheck(filesPath []string, previousFilesList FileMap) (FileMap, string)
     currentFilesList := make(FileMap)
     
     for _, v := range filesPath {
-        fmt.Println(v)
+        log.Println("Running CheckFiles for", v)
         // checklibs.FilesCheck(v)
         filesList, errs := GetFilesList(v)
         

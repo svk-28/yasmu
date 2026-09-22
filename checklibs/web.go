@@ -2,63 +2,86 @@ package checklibs
 
 import (
 	"crypto/tls"
-	"fmt"
+	"log"
 	"io"
 	"net/http"
-	"os"
+	// "os"
 	"time"
+    "fmt"
+    "strings"
 )
 
-func WebCheck(url string) {
-    fmt.Println("\nRunning checklibs/WebCheck")
-	// Настраиваем транспорт (можно отключить проверку сертификата при необходимости)
-	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			MinVersion: tls.VersionTLS12,
-			// InsecureSkipVerify: true, // НЕ используйте в продакшене!
-		},
-	}
+type UrlMap map[string]UrlCheckInfo
 
-	// Создаём клиент с таймаутом
-	client := &http.Client{
-		Timeout:   15 * time.Second,
-		Transport: transport,
-	}
+type UrlCheckInfo struct {
+    CheckStatus  bool
+    ResponseCode int
+    ResponseText string
+}
 
-	// Формируем запрос
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Ошибка создания запроса: %v\n", err)
-		os.Exit(1)
-	}
+func WebCheck(url string) (bool, string) {
+    var (
+        result strings.Builder
+        status bool
+    )
 
-	// Устанавливаем User-Agent
-	req.Header.Set("User-Agent", "Go-HTTPS-Client/1.0")
+    log.Println("Running checklibs/WebCheck")
+    transport := &http.Transport{
+        TLSClientConfig: &tls.Config{
+        MinVersion: tls.VersionTLS12,
+            // InsecureSkipVerify: true, // НЕ используйте в продакшене!
+        },
+    }
 
-	// Выполняем запрос
-	resp, err := client.Do(req)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Ошибка запроса: %v\n", err)
-		os.Exit(1)
-	}
-	defer resp.Body.Close()
+        client := &http.Client{
+        Timeout:   15 * time.Second,
+        Transport: transport,
+    }
 
-	// Проверяем статус
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		fmt.Fprintf(os.Stderr, "HTTP ошибка: %s\n", resp.Status)
-	}
+    req, err := http.NewRequest(http.MethodGet, url, nil)
+    if err != nil {
+        log.Printf("Making the request error: %v\n", err)
+    }
 
-	// Читаем тело
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Ошибка чтения: %v\n", err)
-		os.Exit(1)
-	}
+    req.Header.Set("User-Agent", "Go-HTTPS-Client/1.0")
 
-	fmt.Printf("URL: %s\n", url)
-	fmt.Printf("Статус: %s\n", resp.Status)
-	fmt.Printf("Content-Type: %s\n", resp.Header.Get("Content-Type"))
-	fmt.Printf("Размер: %d байт\n", len(body))
-	fmt.Println("---")
-	fmt.Println(string(body))
+    resp, err := client.Do(req)
+    if err != nil {
+        log.Printf("Request error: %v\n", err)
+        fmt.Fprintf(&result, "URL: %s\n", url)
+        fmt.Fprintf(&result, "Status: %s\n", err)
+        return false, result.String()
+    }
+    defer resp.Body.Close()
+
+    if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+        log.Printf("HTTP error: %s\n", resp.Status)
+        fmt.Fprintf(&result, "Web check alarm on host %s:\n", url)
+        status = false
+    } else {
+        status = true
+    }
+
+    body, err := io.ReadAll(resp.Body)
+    if err != nil {
+        log.Printf("Request response reading error: %v\n", err)
+    }
+
+    if status {
+        fmt.Fprintf(&result, "URL: %s\n", url)
+        fmt.Fprintf(&result, "Status: %s\n", resp.Status)
+        // log.Printf("Content-Type: %s\n", resp.Header.Get("Content-Type"))
+        // log.Printf("Size: %d байт\n", len(body))
+        // log.Println("---")
+        // log.Println(string(body))
+    } else {
+        fmt.Fprintf(&result, "URL: %s\n", url)
+        fmt.Fprintf(&result, "Status: %s\n", resp.Status)
+        fmt.Fprintf(&result, "Content-Type: %s\n", resp.Header.Get("Content-Type"))
+        fmt.Fprintf(&result, "Size: %d байт\n", len(body))
+        fmt.Fprintf(&result, "---")
+        fmt.Fprintf(&result, "%s\n", string(body))
+    }
+
+    return status, result.String()
 }

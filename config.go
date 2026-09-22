@@ -37,6 +37,9 @@ server = smtp.server.com
 port = 465
 user = user
 password = 12345678
+mailto = to@domain.com
+mailfrom = from@domain.com
+mailsubject = Alert message from %HOSTNAME$
 
 [Notify.matrix]
 server = matrix.server.com
@@ -101,9 +104,12 @@ type Notify struct {
 
 type EmailConfig struct {
 	Server   string `ini:"server"`
-	Port     int    `ini:"port"`
+	Port     string `ini:"port"`
 	User     string `ini:"user"`
 	Password string `ini:"password"`
+    MailFrom string `ini:"mailfrom"`
+    MailTo   string `ini:"mailto"`
+    MailSubject string `ini:"mailsubject"`
 }
 
 type MatrixConfig struct {
@@ -211,4 +217,3 @@ func ConfigMake(cfgTmpl string, cfgFileName string) {
      
     fmt.Printf("Config file '%s' has been created.\n", cfgFileName)
 }
-
