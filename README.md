@@ -19,7 +19,7 @@ A utility for monitoring system integrity. And for web monitoring of websites av
 
 ## Credits
 
-Sergey Kalinin - author
+Author: Sergey Kalinin svk@nuk-svk.ru
 License: GPL v3
 
 Home page: [nuk-svk.ru](https://nuk-svk.ru). E-mail: [svk@nuk-svk.ru](svk@nuk-svk.ru)

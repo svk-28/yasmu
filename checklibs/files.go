@@ -1,7 +1,7 @@
-// *******************************************************
+// ********************************************************************
 // Watchdog - the utility for monitoring system integrity.
 // And for web monitoring of websites availability.
-// *******************************************************
+// ********************************************************************
 // Author: Sergey Kalinin
 // License: GPL v3
 // ********************************************************************
@@ -37,7 +37,6 @@ type PathSpec struct {
 	Watch   []string // события: "create", "modify", "delete"
 	Exclude []string // что пропускать
 }
-
 
 // FileMeta — метаданные файла/каталога.
 type FileMeta struct {
@@ -127,7 +126,7 @@ func PrintDiff(d DiffResult, showUnchanged bool) string {
 		for _, fd := range d.Changed {
 			fmt.Fprintf(&sb, "   ~ %s\n", fd.Path)
 			for _, ch := range fd.Changes {
-				fmt.Fprintf(&sb, "       %-6s: %q → %q\n", ch.Field, ch.Old, ch.New)
+				fmt.Fprintf(&sb, "       %-6s: %q --> %q\n", ch.Field, ch.Old, ch.New)
 			}
 		}
 	}

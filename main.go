@@ -9,21 +9,22 @@
 package main
 
 import (
-	"context"
-	"flag"
-	"fmt"
-	"log"
-	"os"
-	"os/signal"
-	"strings"
-	"syscall"
-	"time"
+    "context"
+    "flag"
+    "fmt"
+    "log"
+    "os"
+    // "io"
+    "os/signal"
+    "strings"
+    "syscall"
+    "time"
 
-	"watchdog/checklibs"
-	"watchdog/mainlibs"
-	"watchdog/notifylibs"
+    "watchdog/checklibs"
+    "watchdog/mainlibs"
+    "watchdog/notifylibs"
 
-	"github.com/sevlyar/go-daemon"
+    "github.com/sevlyar/go-daemon"
 )
 
 const (
@@ -39,24 +40,36 @@ var (
 
 var previousFileList checklibs.FileMap
 var previousUrlList checklibs.UrlMap
+var previousUsersList checklibs.UserList
 
 // runChecks выполняет все включённые проверки и, если есть что сообщить,
 // отправляет уведомление.
 func runChecks(cfg *Config) {
-	var resultOfFilesCheck string
-	var summaryReport strings.Builder
+    var (
+        resultOfFilesCheck string
+        resultOfUsersCheck string
+        summaryReport strings.Builder
+    )
 
-	if cfg.Checks.Users.Enable {
-		checklibs.UsersCheck()
-		checklibs.UsersPermissionCheck()
-		checklibs.UsersSudoersCheck()
-	}
+    if cfg.Checks.Users.Enable {
+        previousUsersList, resultOfUsersCheck = checklibs.UsersCheck(previousUsersList)
+        if resultOfUsersCheck != "" {
+            log.Println("Changes in users have been recorded:")
+            log.Println(resultOfUsersCheck)
+            summaryReport.WriteString(resultOfUsersCheck)
+        } else {
+            log.Println("No user changes have been recorded.")
+        }
+    }
+
 	if cfg.Checks.Process.Enable {
 		checklibs.ProcessCheck()
 	}
+
 	if cfg.Checks.Network.Enable {
 		checklibs.NetworkCheck()
 	}
+
 	if cfg.Checks.Ports.Enable {
 		checklibs.PortsCheck()
 	}
@@ -87,7 +100,8 @@ func runChecks(cfg *Config) {
 		    })
 	    }
     
-	    previousFileList, resultOfFilesCheck = checklibs.FilesCheck(paths, previousFileList)
+        previousFileList, resultOfFilesCheck = checklibs.FilesCheck(paths, previousFileList)
+
 	    if resultOfFilesCheck != "" {
 		    log.Println("Changes to the file system have been recorded:")
 		    log.Println(resultOfFilesCheck)
@@ -203,6 +217,11 @@ func main() {
 	})
 	flag.Parse()
 
+    // Disable log output
+    // log.SetOutput(io.Discard)
+    // log.SetFlags(0)
+    // log.SetPrefix("")
+    
 	if MakeConfig {
 		if err := ConfigMake(ConfigTemplate, ConfigFile); err != nil {
 			log.Fatal(err)
