@@ -21,7 +21,7 @@ import (
     "strings"
 )
 
-type UrlMap map[string]UrlCheckInfo
+type UrlList map[string]UrlCheckInfo
 
 type UrlCheckInfo struct {
     CheckStatus  bool

@@ -38,17 +38,23 @@ var (
 	RunOnce     bool
 )
 
-var previousFileList checklibs.FileMap
-var previousUrlList checklibs.UrlMap
-var previousUsersList checklibs.UserList
+var (
+    previousFileList    checklibs.FileList
+    previousUrlList     checklibs.UrlList
+    previousUsersList   checklibs.UserList
+    previousServiceList checklibs.ServiceList
+    previousProcessList checklibs.ProcessList
+)
 
 // runChecks выполняет все включённые проверки и, если есть что сообщить,
 // отправляет уведомление.
 func runChecks(cfg *Config) {
     var (
-        resultOfFilesCheck string
-        resultOfUsersCheck string
-        summaryReport strings.Builder
+        resultOfFilesCheck     string
+        resultOfUsersCheck     string
+        resultOfServicesCheck  string
+        resultOfProcessesCheck string
+        summaryReport          strings.Builder
     )
 
     if cfg.Checks.Users.Enable {
@@ -56,15 +62,27 @@ func runChecks(cfg *Config) {
         if resultOfUsersCheck != "" {
             log.Println("Changes in users have been recorded:")
             log.Println(resultOfUsersCheck)
+            fmt.Fprintf(&summaryReport, "\n========= Changes to the users have been recorded =========\n")
             summaryReport.WriteString(resultOfUsersCheck)
         } else {
             log.Println("No user changes have been recorded.")
         }
     }
 
-	if cfg.Checks.Process.Enable {
-		checklibs.ProcessCheck()
-	}
+    if cfg.Checks.Processes.Enable {
+        previousProcessList, resultOfProcessesCheck = checklibs.ProcessesCheck(
+            cfg.Checks.Processes.Exclude,
+            previousProcessList,
+        )
+        if resultOfProcessesCheck != "" {
+            log.Println("Changes in processes have been recorded:")
+            log.Println(resultOfProcessesCheck)
+            fmt.Fprintf(&summaryReport, "\n========= Changes in processes have been recorded =========\n")
+            summaryReport.WriteString(resultOfProcessesCheck)
+        } else {
+            log.Println("No process changes have been recorded.")
+        }
+    }
 
 	if cfg.Checks.Network.Enable {
 		checklibs.NetworkCheck()
@@ -90,7 +108,6 @@ func runChecks(cfg *Config) {
 	}
 
     if cfg.Checks.Files.Enable {
-	    // Конвертируем конфиг в локальный тип checklibs.
 	    paths := make([]checklibs.PathSpec, 0, len(cfg.Checks.Files.Paths))
 	    for _, pw := range cfg.Checks.Files.Paths {
 		    paths = append(paths, checklibs.PathSpec{
@@ -105,10 +122,23 @@ func runChecks(cfg *Config) {
 	    if resultOfFilesCheck != "" {
 		    log.Println("Changes to the file system have been recorded:")
 		    log.Println(resultOfFilesCheck)
+            fmt.Fprintf(&summaryReport, "\n========= Changes to the file system have been recorded =========\n")
 		    summaryReport.WriteString(resultOfFilesCheck)
 	    } else {
 		    log.Println("No files changes have been recorded.")
 	    }
+    }
+
+    if cfg.Checks.Services.Enable {
+        previousServiceList, resultOfServicesCheck = checklibs.ServicesCheck(cfg.Checks.Services.Units, previousServiceList)
+        if resultOfServicesCheck != "" {
+            log.Println("Changes in services have been recorded:")
+            log.Println(resultOfServicesCheck)
+            fmt.Fprintf(&summaryReport, "\n========= Changes to the services have been recorded =========\n")
+            summaryReport.WriteString(resultOfServicesCheck)
+        } else {
+            log.Println("No service changes have been recorded.")
+        }
     }
 
 	if len(summaryReport.String()) != 0 {

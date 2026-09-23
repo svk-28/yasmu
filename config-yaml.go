@@ -28,8 +28,10 @@ var ConfigTemplate = `daemon:
 checks:
   cron:
     enable: false
-  process:
+  processes:
     enable: false
+    exclude:
+      - kworker
   users:
     enable: false
   network:
@@ -51,7 +53,12 @@ checks:
         exclude:
           - /dev/pts
           - /dev/tty
-
+    services:
+        enable: true
+        units:
+          - sshd.service
+          - nginx.service
+          - postgresql.service
 notify:
   email:
     enable: false
@@ -95,28 +102,27 @@ type BaseCheck struct {
 }
 
 type ChecksConfig struct {
-	Cron    CronCheck    `yaml:"cron"`
-	Process ProcessCheck `yaml:"process"`
-	Users   UsersCheck   `yaml:"users"`
-	Network NetworkCheck `yaml:"network"`
-	Ports   PortsCheck   `yaml:"ports"`
-	Web     WebCheck     `yaml:"web"`
-	Files   FilesCheck   `yaml:"files"`
+    Cron      CronCheck    `yaml:"cron"`
+    Processes ProcessCheck `yaml:"processes"`
+    Users     UsersCheck   `yaml:"users"`
+    Network   NetworkCheck `yaml:"network"`
+    Ports     PortsCheck   `yaml:"ports"`
+    Web       WebCheck     `yaml:"web"`
+    Files     FilesCheck   `yaml:"files"`
+    Services  ServicesCheck `yaml:"services"`
 }
 
 type CronCheck struct {
 	Enable bool `yaml:"enable"`
-	// BaseCheck `yaml:",inline"`
 }
 
 type ProcessCheck struct {
 	Enable bool `yaml:"enable"`
-	// BaseCheck `yaml:",inline"`
+    Exclude []string `yaml:"exclude"`
 }
 
 type UsersCheck struct {
 	Enable bool `yaml:"enable"`
-	// BaseCheck `yaml:",inline"`
 }
 
 type NetworkCheck struct {
@@ -139,6 +145,11 @@ type FilesCheck struct {
 	Enable bool `yaml:"enable"`
 	// BaseCheck `yaml:",inline"`
 	Paths     []PathWatch `yaml:"paths"`
+}
+
+type ServicesCheck struct {
+    Enable bool     `yaml:"enable"`
+    Units  []string `yaml:"units"`
 }
 
 type PathWatch struct {

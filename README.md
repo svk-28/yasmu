@@ -1,14 +1,15 @@
-## Watchdog
+## About Watchdog
 
 A utility for monitoring system integrity. And for web monitoring of websites availability.
 
-* Runing process
-* Users
-* Listen ports
-* Network connections
-* Cron (crontab) files
-* URL available
-* Directory and files (creating, deleting and changes)
+* [] Runing process
+* [x] System (systemd) services (enabling, disabling, starting, stoping)
+* [x] Users
+* [] Listen ports
+* [] Network connections
+* [] Cron (crontab) files
+* [x] URL available
+* [x] Directory and files (creating, deleting and changes)
 
 ## Notifaction
 

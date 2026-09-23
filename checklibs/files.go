@@ -52,7 +52,7 @@ type FileMeta struct {
 	// CreateTime time.Time
 }
 
-type FileMap map[string]FileMeta
+type FileList map[string]FileMeta
 
 type FieldChange struct {
 	Field string
@@ -156,7 +156,7 @@ func PrintDiff(d DiffResult, showUnchanged bool) string {
 // CompareFilesList сравнивает списки файлов из предыдущей и текущей проверок.
 // Поле Watched не участвует в сравнении — это служебная информация,
 // изменение watch в конфиге не должно выглядеть как «файл изменился».
-func CompareFilesList(base, actual FileMap) DiffResult {
+func CompareFilesList(base, actual FileList) DiffResult {
 	var res DiffResult
 
 	for path, b := range base {
@@ -217,7 +217,7 @@ func CompareFilesList(base, actual FileMap) DiffResult {
 //
 // Для удалённых путей смотрим в prev (в curr их уже нет), для остальных — в curr.
 // Поле Watched едет вместе с FileMeta через снимки, поэтому доступно в обоих.
-func filterDiffByWatch(d DiffResult, prev, curr FileMap) DiffResult {
+func filterDiffByWatch(d DiffResult, prev, curr FileList) DiffResult {
 	var res DiffResult
 
 	// Удалённые: показываем, если для этого пути включён "delete".
@@ -251,8 +251,8 @@ func filterDiffByWatch(d DiffResult, prev, curr FileMap) DiffResult {
 	return res
 }
 
-func GetFilesList(dir string, watch []string, exclude []string) (FileMap, []error) {
-	result := make(FileMap)
+func GetFilesList(dir string, watch []string, exclude []string) (FileList, []error) {
+	result := make(FileList)
 	var errs []error
 
 	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
@@ -338,8 +338,8 @@ func isExcluded(p string, exclude []string) bool {
 //
 // Возвращает новый снимок (для передачи в следующий вызов) и текст отчёта
 // (пустая строка, если изменений нет).
-func FilesCheck(paths []PathSpec, previousFilesList FileMap) (FileMap, string) {
-	currentFilesList := make(FileMap)
+func FilesCheck(paths []PathSpec, previousFilesList FileList) (FileList, string) {
+	currentFilesList := make(FileList)
 
 	for _, ps := range paths {
 		log.Println("Running CheckFiles for", ps.Path)
