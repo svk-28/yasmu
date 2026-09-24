@@ -15,7 +15,7 @@ A utility for monitoring system integrity. And for web monitoring of websites av
 
 * [x] Email (smtp sending)
 * [x] Matrix
-* [] Webhook
+* [x] Webhook (json or text message)
 
 
 ## Credits
