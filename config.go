@@ -51,7 +51,8 @@ mailsubject = Alert message from %HOSTNAME$
 server = matrix.server.com
 user = user
 password = 12345678
-chatid = 1qu2ueu4383jr4o83
+room_id = 1qu2ueu4383jr4o83
+access_token = 
 
 [Notify.webhook]
 url = https://web.server.com/hook
@@ -122,7 +123,7 @@ type MatrixConfig struct {
 	Server   string `ini:"server"`
 	User     string `ini:"user"`
 	Password string `ini:"password"`
-	ChatID   string `ini:"chatID"`
+	RoomID   string `ini:"chatID"`
 }
 
 type WebhookConfig struct {

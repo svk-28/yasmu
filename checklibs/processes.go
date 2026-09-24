@@ -1,8 +1,15 @@
 // ********************************************************************
+// Watchdog - the utility for monitoring system integrity.
+// And for web monitoring of websites availability.
+// ********************************************************************
+// Author: Sergey Kalinin
+// License: GPL v3
+// ********************************************************************
 // Process monitoring module.
-// Collects running processes via gopsutil and compares with the
+// Collects running processes and compares with the
 // previous snapshot to detect changes.
 // ********************************************************************
+
 package checklibs
 
 import (
@@ -15,10 +22,10 @@ import (
 )
 
 type ProcessMeta struct {
-    PID   int32  // идентификатор процесса
-    PPID  int32  // идентификатор родительского процесса
-    Name  string // имя процесса
-    Owner string // владелец (username)
+    PID   int32  // process ID
+    PPID  int32  // parent process id
+    Name  string // process name
+    Owner string // process owner
 }
 
 type ProcessList map[int32]ProcessMeta
@@ -29,17 +36,12 @@ type ProcessDiff struct {
 }
 
 type ProcessDiffResult struct {
-    OnlyInBase   []int32        // процессы, которые завершились
-    OnlyInActual []int32        // процессы, которые появились
-    Changed      []ProcessDiff  // процессы, у которых изменились поля
-    Unchanged    []int32        // процессы без изменений
+    OnlyInBase   []int32
+    OnlyInActual []int32
+    Changed      []ProcessDiff
+    Unchanged    []int32
 }
 
-
-// CompareProcessLists сравнивает два снимка ProcessList.
-// Для завершившихся процессов (OnlyInBase) в отчёте используется
-// сохранённое имя из предыдущего снимка — чтобы было понятно,
-// что именно остановилось.
 func CompareProcessLists(base, actual ProcessList) ProcessDiffResult {
     var res ProcessDiffResult
 
@@ -82,15 +84,12 @@ func CompareProcessLists(base, actual ProcessList) ProcessDiffResult {
     return res
 }
 
-// PrintProcessesDiff формирует текстовый отчёт об изменениях в процессах.
-// Возвращает пустую строку, если изменений нет.
-// Для завершившихся процессов пытается вытащить имя из base — чтобы
-// в отчёте было не просто "PID 1234", а "PID 1234 (nginx)".
-// PrintProcessesDiff формирует текстовый отчёт об изменениях в процессах.
-// Возвращает пустую строку, если изменений нет.
-//
-// base — предыдущий снимок (для имён остановленных процессов).
-// actual — текущий снимок (для имён новых процессов и изменённых).
+// PrintProcessesDiff generates a text report on changes in processes.
+// Returns an empty string if there are no changes.
+// For terminated processes, it attempts to extract the name from base — 
+// so that the report contains not just “PID 1234”, but “PID 1234 (nginx)”.
+// base — the previous snapshot (for the names of stopped processes).
+// actual — the current snapshot (for the names of new and modified processes).
 func PrintProcessesDiff(d ProcessDiffResult, base, actual ProcessList, showUnchanged bool) string {
     var sb strings.Builder
 
@@ -201,9 +200,6 @@ func GetProcessesList(exclude []string) (ProcessList, []error) {
     return result, errs
 }
 
-// cloneProcessList — копия ProcessList
-// ProcessMeta не содержит срезов и указателей, поэтому поверхностной
-// копии достаточно.
 func cloneProcessList(src ProcessList) ProcessList {
     dst := make(ProcessList, len(src))
     for k, v := range src {
@@ -212,8 +208,6 @@ func cloneProcessList(src ProcessList) ProcessList {
     return dst
 }
 
-// isProcessExcluded проверяет, содержит ли имя процесса одну из подстрок
-// из exclude (без учёта регистра).
 func isProcessExcluded(name string, exclude []string) bool {
     if len(exclude) == 0 {
         return false
@@ -253,4 +247,3 @@ func ProcessesCheck(exclude []string, previousProcessList ProcessList) (ProcessL
 
     return cloneProcessList(currentProcessList), out
 }
-

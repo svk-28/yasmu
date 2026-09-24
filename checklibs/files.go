@@ -258,11 +258,9 @@ func GetFilesList(dir string, watch []string, exclude []string) (FileList, []err
 	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", p, err))
-			return nil // не прерываем обход
+			return nil
 		}
 
-		// Пропускаем исключённые пути.
-		// Для директории SkipDir — не заходим внутрь.
 		if isExcluded(p, exclude) {
 			if d.IsDir() {
 				return filepath.SkipDir
@@ -311,13 +309,7 @@ func GetFilesList(dir string, watch []string, exclude []string) (FileList, []err
 	return result, errs
 }
 
-// isExcluded проверяет, попадает ли путь p под одно из исключений.
-// Срабатывает и для самого пути, и для всего, что внутри него:
-//
-//	exclude = ["/dev/pts"]
-//	/dev/pts      → true (точное совпадение)
-//	/dev/pts/0    → true (внутри)
-//	/dev/ptsX     → false
+
 func isExcluded(p string, exclude []string) bool {
 	for _, ex := range exclude {
 		if p == ex {
@@ -330,14 +322,6 @@ func isExcluded(p string, exclude []string) bool {
 	return false
 }
 
-// FilesCheck обходит все указанные пути и сравнивает с предыдущим снимком.
-//
-// paths — список PathSpec: у каждого корня свои watch и exclude.
-// previousFilesList == nil на первом проходе — тогда diff не формируется,
-// просто возвращается собранный снимок.
-//
-// Возвращает новый снимок (для передачи в следующий вызов) и текст отчёта
-// (пустая строка, если изменений нет).
 func FilesCheck(paths []PathSpec, previousFilesList FileList) (FileList, string) {
 	currentFilesList := make(FileList)
 
@@ -355,15 +339,12 @@ func FilesCheck(paths []PathSpec, previousFilesList FileList) (FileList, string)
 		}
 	}
 
-	// Первый проход: запоминаем эталон и выходим без diff.
 	if previousFilesList == nil {
 		return maps.Clone(currentFilesList), ""
 	}
 
 	diff := CompareFilesList(previousFilesList, currentFilesList)
 
-	// Фильтруем diff: убираем категории, которые не отслеживаются.
-	// Для удалённых смотрим в prev, для остальных — в curr.
 	diff = filterDiffByWatch(diff, previousFilesList, currentFilesList)
 
 	out := PrintDiff(diff, false)

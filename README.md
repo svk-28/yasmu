@@ -2,7 +2,7 @@
 
 A utility for monitoring system integrity. And for web monitoring of websites availability.
 
-* [] Runing process
+* [x] Runing process
 * [x] System (systemd) services (enabling, disabling, starting, stoping)
 * [x] Users
 * [] Listen ports
@@ -13,9 +13,9 @@ A utility for monitoring system integrity. And for web monitoring of websites av
 
 ## Notifaction
 
-* Email (smtp sending)
-* Matrix
-* Webhook
+* [x] Email (smtp sending)
+* [x] Matrix
+* [] Webhook
 
 
 ## Credits

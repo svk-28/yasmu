@@ -53,12 +53,12 @@ checks:
         exclude:
           - /dev/pts
           - /dev/tty
-    services:
-        enable: true
-        units:
-          - sshd.service
-          - nginx.service
-          - postgresql.service
+  services:
+    enable: true
+    units:
+#      - sshd.service
+#      - nginx.service
+#      - postgresql.service
 notify:
   email:
     enable: false
@@ -75,7 +75,8 @@ notify:
     server: matrix.server.com
     user: user
     password: "12345678"
-    chat_id: 1qu2ueu4383jr4o83
+    access_token: ""
+    chat_id: "!1qu2ueu4383jr4o83"
 
   webhook:
     enable: false
@@ -97,9 +98,9 @@ type DaemonConfig struct {
 	PidFile      string `yaml:"pid_file"`
 }
 
-type BaseCheck struct {
-	Enable bool `yaml:"enable"`
-}
+// type BaseCheck struct {
+	// Enable bool `yaml:"enable"`
+// }
 
 type ChecksConfig struct {
     Cron      CronCheck    `yaml:"cron"`
@@ -165,7 +166,7 @@ type NotifyConfig struct {
 }
 
 type EmailNotify struct {
-	BaseCheck   `yaml:",inline"`
+	Enable      bool   `yaml:"enable"`
 	Server      string `yaml:"server"`
 	Port        int    `yaml:"port"`
 	User        string `yaml:"user"`
@@ -176,15 +177,16 @@ type EmailNotify struct {
 }
 
 type MatrixNotify struct {
-	BaseCheck `yaml:",inline"`
-	Server    string `yaml:"server"`
-	User      string `yaml:"user"`
-	Password  string `yaml:"password"`
-	ChatID    string `yaml:"chat_id"`
+	Enable       bool   `yaml:"enable"`
+	Server       string `yaml:"server"`
+	UserName         string `yaml:"user"`
+	Password     string `yaml:"password"`
+	AccessToken  string `yaml:"access_token"`
+	RoomID       string `yaml:"room_id"`
 }
 
 type WebhookNotify struct {
-	BaseCheck `yaml:",inline"`
+	Enable    bool   `yaml:"enable"`
 	URL       string `yaml:"url"`
 	User      string `yaml:"user"`
 	Password  string `yaml:"password"`

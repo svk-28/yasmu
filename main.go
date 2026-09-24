@@ -46,8 +46,6 @@ var (
     previousProcessList checklibs.ProcessList
 )
 
-// runChecks выполняет все включённые проверки и, если есть что сообщить,
-// отправляет уведомление.
 func runChecks(cfg *Config) {
     var (
         resultOfFilesCheck     string
@@ -56,7 +54,7 @@ func runChecks(cfg *Config) {
         resultOfProcessesCheck string
         summaryReport          strings.Builder
     )
-
+    // *********** Users Checks ***************
     if cfg.Checks.Users.Enable {
         previousUsersList, resultOfUsersCheck = checklibs.UsersCheck(previousUsersList)
         if resultOfUsersCheck != "" {
@@ -69,6 +67,7 @@ func runChecks(cfg *Config) {
         }
     }
 
+    // *********** Processes Checks ***************
     if cfg.Checks.Processes.Enable {
         previousProcessList, resultOfProcessesCheck = checklibs.ProcessesCheck(
             cfg.Checks.Processes.Exclude,
@@ -84,14 +83,17 @@ func runChecks(cfg *Config) {
         }
     }
 
+    // *********** Network Connections Checks ***************
 	if cfg.Checks.Network.Enable {
 		checklibs.NetworkCheck()
 	}
 
+    // *********** Network Ports Checks ***************
 	if cfg.Checks.Ports.Enable {
 		checklibs.PortsCheck()
 	}
 
+    // *********** Web Links Checks ***************
 	if cfg.Checks.Web.Enable {
 		for _, v := range cfg.Checks.Web.URLs {
 			log.Println(v)
@@ -107,6 +109,7 @@ func runChecks(cfg *Config) {
 		}
 	}
 
+    // *********** Files And Directories Checks ***************
     if cfg.Checks.Files.Enable {
 	    paths := make([]checklibs.PathSpec, 0, len(cfg.Checks.Files.Paths))
 	    for _, pw := range cfg.Checks.Files.Paths {
@@ -129,6 +132,7 @@ func runChecks(cfg *Config) {
 	    }
     }
 
+    // *********** System Services Checks ***************
     if cfg.Checks.Services.Enable {
         previousServiceList, resultOfServicesCheck = checklibs.ServicesCheck(cfg.Checks.Services.Units, previousServiceList)
         if resultOfServicesCheck != "" {
@@ -141,6 +145,7 @@ func runChecks(cfg *Config) {
         }
     }
 
+    // *********** Sending Summary Report ***************
 	if len(summaryReport.String()) != 0 {
 		log.Println("Result of all checks:", summaryReport.String())
 		SendNotifycation(cfg, summaryReport.String())
@@ -222,17 +227,29 @@ func SendNotifycation(cfg *Config, msg string) {
 		msgSendResult := notifylibs.EmailNotify(&smtpSession, &message)
 
 		if msgSendResult {
-			log.Println("Message send successfuly")
+			log.Println("E-Mail message send successfuly")
 		} else {
-			log.Println("Message send error")
+			log.Println("E-Mail message send error")
 		}
 	}
-	if cfg.Notify.Matrix.Enable {
-		notifylibs.MatrixNotify()
-	}
-	if cfg.Notify.Webhook.Enable {
-		notifylibs.WebHookNotify()
-	}
+    if cfg.Notify.Matrix.Enable {
+        var matrixSession notifylibs.MatrixClient
+        matrixSession.HomeServer = cfg.Notify.Matrix.Server
+        matrixSession.UserName = cfg.Notify.Matrix.UserName
+        matrixSession.UserPassword = cfg.Notify.Matrix.Password
+        matrixSession.AccessToken = cfg.Notify.Matrix.AccessToken
+        // matrixSession.RoomID = cfg.Notify.Matrix.RoomID + ':' + cfg.Notify.Matrix.Server
+        matrixSession.RoomID = fmt.Sprintf("%s:%s", cfg.Notify.Matrix.RoomID, cfg.Notify.Matrix.Server)
+        msgSendResult, msgEventID := notifylibs.MatrixNotify(matrixSession, msg)
+       	if msgSendResult {
+			log.Println("Matrix message send successfuly with event id ", msgEventID)
+		} else {
+			log.Println("Matrix message send error")
+		}
+    }
+    if cfg.Notify.Webhook.Enable {
+        notifylibs.WebHookNotify()
+    }
 }
 
 func main() {
