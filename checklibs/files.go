@@ -19,6 +19,7 @@ package checklibs
 import (
 	"fmt"
 	"io/fs"
+    	"io"
 	"log"
 	"maps"
 	"os"
@@ -28,27 +29,28 @@ import (
 	"syscall"
 	"time"
 
+    "github.com/zeebo/blake3"
+
 	"watchdog/mainlibs"
 )
 
-// PathSpec — описание одного корня обхода: путь, события для отслеживания и исключения. 
 type PathSpec struct {
-	Path    string   // корень обхода
-	Watch   []string // события: "create", "modify", "delete"
-	Exclude []string // что пропускать
+    Path    string
+    Watch   []string // "create", "modify", "delete"
+    Exclude []string
+    Hash    string
 }
 
-// FileMeta — метаданные файла/каталога.
 type FileMeta struct {
-	Path     string
-	FileType string // "file" / "dir" / "symlink" / "other"
-	Size     int64
-	Mode     fs.FileMode
-	Owner    string
-	Group    string
-	ModTime  time.Time
-	// Watched хранит список отслеживаемых событий для этого пути.
-	Watched []string
+    Path     string
+    FileType string // "file" / "dir" / "symlink" / "other"
+    Size     int64
+    Mode     fs.FileMode
+    Owner    string
+    Group    string
+    ModTime  time.Time
+    Watched []string
+    Hash    string //BLAKE3 hash
 	// CreateTime time.Time
 }
 
@@ -65,15 +67,13 @@ type FileDiff struct {
 	Changes []FieldChange
 }
 
-// DiffResult — полный результат сравнения двух снимков.
 type DiffResult struct {
-	OnlyInBase   []string   // удалённые (были в base, нет в actual)
-	OnlyInActual []string   // добавленные (нет в base, есть в actual)
-	Changed      []FileDiff // изменённые
-	Unchanged    []string   // без изменений
+	OnlyInBase   []string
+	OnlyInActual []string
+	Changed      []FileDiff
+	Unchanged    []string
 }
 
-// contains — простая проверка наличия строки в слайсе.
 func contains(s []string, v string) bool {
 	for _, x := range s {
 		if x == v {
@@ -83,13 +83,6 @@ func contains(s []string, v string) bool {
 	return false
 }
 
-// -----------------------------------------------------------------------------
-// Формирование отчёта
-// -----------------------------------------------------------------------------
-
-// PrintDiff формирует текстовый отчёт об изменениях.
-// Возвращает пустую строку, если изменений нет (чтобы не отправлять пустые
-// уведомления).
 func PrintDiff(d DiffResult, showUnchanged bool) string {
 	var sb strings.Builder
 
@@ -149,13 +142,6 @@ func PrintDiff(d DiffResult, showUnchanged bool) string {
 	return ""
 }
 
-// -----------------------------------------------------------------------------
-// Сравнение снимков
-// -----------------------------------------------------------------------------
-
-// CompareFilesList сравнивает списки файлов из предыдущей и текущей проверок.
-// Поле Watched не участвует в сравнении — это служебная информация,
-// изменение watch в конфиге не должно выглядеть как «файл изменился».
 func CompareFilesList(base, actual FileList) DiffResult {
 	var res DiffResult
 
@@ -175,6 +161,10 @@ func CompareFilesList(base, actual FileList) DiffResult {
 			changes = append(changes, FieldChange{"size",
 				fmt.Sprint(b.Size), fmt.Sprint(a.Size)})
 		}
+        if b.Hash != a.Hash {
+            changes = append(changes, FieldChange{"hash",
+            fmt.Sprint(b.Hash), fmt.Sprint(a.Hash)})
+        }
 		if b.Mode.Perm() != a.Mode.Perm() {
 			changes = append(changes, FieldChange{"mode",
 				b.Mode.Perm().String(), a.Mode.Perm().String()})
@@ -208,15 +198,8 @@ func CompareFilesList(base, actual FileList) DiffResult {
 	return res
 }
 
-// -----------------------------------------------------------------------------
-// Фильтрация diff по watch
-// -----------------------------------------------------------------------------
-
 // filterDiffByWatch убирает из diff категории, которые не отслеживаются
 // для соответствующих путей.
-//
-// Для удалённых путей смотрим в prev (в curr их уже нет), для остальных — в curr.
-// Поле Watched едет вместе с FileMeta через снимки, поэтому доступно в обоих.
 func filterDiffByWatch(d DiffResult, prev, curr FileList) DiffResult {
 	var res DiffResult
 
@@ -251,9 +234,12 @@ func filterDiffByWatch(d DiffResult, prev, curr FileList) DiffResult {
 	return res
 }
 
-func GetFilesList(dir string, watch []string, exclude []string) (FileList, []error) {
+func GetFilesList(dir string, watch []string, exclude []string, hashCalc string) (FileList, []error) {
 	result := make(FileList)
-	var errs []error
+    var (
+        errs []error
+        fileHash string
+    ) 
 
 	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -284,13 +270,24 @@ func GetFilesList(dir string, watch []string, exclude []string) (FileList, []err
 			fileType = "file"
 		}
 
+        if hashCalc != "" && info.Mode().IsRegular() {
+            fileHash, err = HashFile(p)
+            // log.Printf("File %s has hash %s", p, fileHash)
+            if err != nil {
+                log.Println("Hash calculation error: ", err)
+            }
+        } else {
+            fileHash = ""
+        }
+
 		meta := FileMeta{
-			Path:     p,
-			FileType: fileType,
-			Size:     info.Size(),
-			Mode:     info.Mode(),
-			ModTime:  info.ModTime(),
-			Watched:  watch,
+            Path:     p,
+            FileType: fileType,
+            Size:     info.Size(),
+            Mode:     info.Mode(),
+            ModTime:  info.ModTime(),
+            Watched:  watch,
+            Hash:     fileHash,
 		}
 
 		// Unix only
@@ -322,13 +319,30 @@ func isExcluded(p string, exclude []string) bool {
 	return false
 }
 
+func HashFile(path string) (string, error) {
+    f, err := os.Open(path)
+    if err != nil {
+        return "", err
+    }
+    defer f.Close()
+
+    hasher := blake3.New()
+
+    if _, err := io.Copy(hasher, f); err != nil {
+        return "", err
+    }
+
+    return fmt.Sprintf("%x", hasher.Sum(nil)), nil
+}
+
+
 func FilesCheck(paths []PathSpec, previousFilesList FileList) (FileList, string) {
 	currentFilesList := make(FileList)
 
 	for _, ps := range paths {
 		log.Println("Running CheckFiles for", ps.Path)
 
-		filesList, errs := GetFilesList(ps.Path, ps.Watch, ps.Exclude)
+		filesList, errs := GetFilesList(ps.Path, ps.Watch, ps.Exclude, ps.Hash)
 
 		for path, meta := range filesList {
 			currentFilesList[path] = meta

@@ -117,6 +117,7 @@ func runChecks(cfg *Config) {
 			    Path:    pw.Path,
 			    Exclude: pw.Exclude,
         			    Watch:   pw.Watch,
+                Hash:    pw.Hash,
 		    })
 	    }
     

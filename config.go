@@ -49,11 +49,12 @@ checks:
   # File system monitoring: file creation, modification, deletion.
   files:
     enable: true
-
     # List of roots to traverse. Each root has its own set of watched
     # events and exclusions.
     paths:
       - path: /etc
+        # If a "hash: blake3" is specified, the check sums are calculated.
+        hash: blake3
         # Which events to watch for this root:
         #   create — new files/directories appear
         #   modify — content, permissions, owner or mtime changes
@@ -240,9 +241,10 @@ type ServicesCheck struct {
 }
 
 type PathWatch struct {
-	Path    string   `yaml:"path"`
-	Watch   []string `yaml:"watch"`   // "create", "modify", "delete"
-	Exclude []string `yaml:"exclude"`
+    Path    string   `yaml:"path"`
+    Watch   []string `yaml:"watch"`   // "create", "modify", "delete"
+    Exclude []string `yaml:"exclude"`
+    Hash    string    `yaml:"hash"`
 }
 
 type NotifyConfig struct {

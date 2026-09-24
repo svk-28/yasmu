@@ -9,7 +9,7 @@ A utility for monitoring system integrity. And for web monitoring of websites av
 * [] Network connections
 * [] Cron (crontab) files
 * [x] URL available
-* [x] Directory and files (creating, deleting and changes)
+* [x] Directory and files (creating, deleting and changes, hash)
 
 ## Notifaction
 
