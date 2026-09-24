@@ -197,6 +197,34 @@ func DaemonRun(cfg *Config) {
 	log.Println("Daemon stopped")
 }
 
+// escapeJSONBody escapes characters that break JSON if they end up
+// inside string values: real line breaks, tabs, quotation marks, backslashes.
+// The outer curly braces and the structure are not touched — this is a "blind" escape,
+// suitable for simple cases when the template is assembled manually.
+func escapeJSONString(s string) string {
+	var b strings.Builder
+	b.Grow(len(s) + 16)
+
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		switch ch {
+		case '\n':
+			b.WriteString(`\n`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '\t':
+			b.WriteString(`\t`)
+		case '"':
+			b.WriteString(`\"`)
+		case '\\':
+			b.WriteString(`\\`)
+		default:
+			b.WriteByte(ch)
+		}
+	}
+	return b.String()
+}
+
 func SendNotifycation(cfg *Config, msg string) {
 	hostname, err := mainlibs.GetFQDN()
 	if err != nil {
@@ -204,6 +232,7 @@ func SendNotifycation(cfg *Config, msg string) {
 	}
 	log.Println("Running host FQDN:", hostname)
 
+    // E-Mail notification
 	if cfg.Notify.Email.Enable {
 		var (
 			message     notifylibs.MailMessage
@@ -232,6 +261,8 @@ func SendNotifycation(cfg *Config, msg string) {
 			log.Println("E-Mail message send error")
 		}
 	}
+
+    // Matrix notification
     if cfg.Notify.Matrix.Enable {
         var matrixSession notifylibs.MatrixClient
         matrixSession.HomeServer = cfg.Notify.Matrix.Server
@@ -247,8 +278,28 @@ func SendNotifycation(cfg *Config, msg string) {
 			log.Println("Matrix message send error")
 		}
     }
+
+    // Webhook notification
     if cfg.Notify.Webhook.Enable {
-        notifylibs.WebHookNotify()
+        var webhookSession notifylibs.WebhookClient
+        webhookSession.URL = cfg.Notify.Webhook.URL
+        webhookSession.User = cfg.Notify.Webhook.User
+        webhookSession.Password = cfg.Notify.Webhook.Password
+        webhookSession.MessageFormat = cfg.Notify.Webhook.Message.Format
+
+        escMsg := msg
+        if cfg.Notify.Webhook.Message.Format == "json" {
+	        escMsg = escapeJSONString(msg)
+        }
+        messageForSending := strings.ReplaceAll(cfg.Notify.Webhook.Message.Template, "%HOSTNAME%", hostname)
+        messageForSending = strings.ReplaceAll(messageForSending, "%MESSAGE%", escMsg)
+
+        ok, respBody := notifylibs.WebhookNotify(webhookSession, messageForSending)
+        if ok {
+            log.Println("Webhook sent successfully, response:", respBody)
+        } else {
+            log.Println("Webhook send error")
+        }
     }
 }
 

@@ -1,3 +1,13 @@
+// ********************************************************************
+// Watchdog - the utility for monitoring system integrity.
+// And for web monitoring of websites availability.
+// ********************************************************************
+// Author: Sergey Kalinin
+// License: GPL v3
+// ********************************************************************
+// Module for sending messages to the Matrix
+// ********************************************************************
+
 package notifylibs
 
 import (
@@ -23,8 +33,6 @@ type MatrixClient struct {
 	HTTPClient   *http.Client
 }
 
-// MatrixNewClient создаёт клиент Matrix и нормализует поля.
-// HomeServer приводится к URL со схемой, RoomID — к полному виду !localpart:server.
 func MatrixNewClient(matrixSession MatrixClient) *MatrixClient {
 	c := matrixSession
 
@@ -45,12 +53,11 @@ func MatrixNewClient(matrixSession MatrixClient) *MatrixClient {
 		)
 	}
 
-	// UserName: приводим к формату @localpart:server.
+	// UserName: приводим к формату @user:server.
 	if c.UserName != "" {
 		c.UserName = normalizeMatrixID(c.UserName, "@", extractServerName(c.HomeServer))
 	}
 
-	// HTTP-клиент по умолчанию.
 	if c.HTTPClient == nil {
 		c.HTTPClient = &http.Client{Timeout: 15 * time.Second}
 	}
@@ -68,41 +75,38 @@ func extractServerName(homeserver string) string {
 	return s
 }
 
-// normalizeMatrixID приводит идентификатор к полному виду sigil+localpart:server.
-// Если в строке уже есть ":" — считаем, что сервер указан, и только проверяем sigil.
-// Если ":" нет — добавляем sigil и server.
-func normalizeMatrixID(id, sigil, server string) string {
+// normalizeMatrixID приводит идентификатор к полному виду symbol+username:server.
+// Если в строке уже есть ":" — считаем, что сервер указан, и только проверяем symbol.
+// Если ":" нет — добавляем symbol и server.
+func normalizeMatrixID(id, symbol, server string) string {
 	id = strings.TrimSpace(id)
 
-	// Если сервер уже указан — проверяем только sigil.
+	// Если сервер уже указан — проверяем только symbol.
 	if strings.Contains(id, ":") {
-		if !strings.HasPrefix(id, sigil) {
-			id = sigil + id
+		if !strings.HasPrefix(id, symbol) {
+			id = symbol + id
 		}
 		return id
 	}
 
-	// Сервер не указан — добавляем sigil и server.
-	id = strings.TrimPrefix(id, sigil)
-	return fmt.Sprintf("%s%s:%s", sigil, id, server)
+	// Сервер не указан — добавляем symbol и server.
+	id = strings.TrimPrefix(id, symbol)
+	return fmt.Sprintf("%s%s:%s", symbol, id, server)
 }
 
-// MatrixSendText отправляет текстовое сообщение и возвращает event_id.
-func (c *MatrixClient) MatrixSendText(ctx context.Context, roomID, text string) (string, error) {
+func (c *MatrixClient) MatrixSendText(ctx context.Context, text string) (string, error) {
 	if c.AccessToken == "" {
 		return "", fmt.Errorf("matrix: empty access token")
 	}
-	if roomID == "" {
+	if c.RoomID == "" {
 		return "", fmt.Errorf("matrix: empty room ID")
 	}
 
-    // txnID := fmt.Sprintf("%d", time.Now().UnixNano())
-    // id := uuid.New()
-    txnID := uuid.New().String()
+    msgID := uuid.New().String()
     
 	endpoint := fmt.Sprintf(
 		"%s/_matrix/client/v3/rooms/%s/send/m.room.message/%s",
-		c.HomeServer, url.PathEscape(roomID), txnID,
+		c.HomeServer, url.PathEscape(c.RoomID), msgID,
 	)
 
 	payload := map[string]string{"msgtype": "m.text", "body": text}
@@ -143,9 +147,9 @@ func (c *MatrixClient) MatrixSendText(ctx context.Context, roomID, text string) 
 func MatrixNotify(matrixSession MatrixClient, message string) (bool, string) {
 	fmt.Println("\nRunning notifylibs/MatrixNotify")
 
-	c := MatrixNewClient(matrixSession)
+    c := MatrixNewClient(matrixSession)
 
-	eventID, err := c.MatrixSendText(context.Background(), c.RoomID, message)
+	eventID, err := c.MatrixSendText(context.Background(), message)
 	if err != nil {
 		log.Println("Error sending message to matrix: ", err)
 		return false, ""

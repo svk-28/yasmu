@@ -83,6 +83,12 @@ notify:
     url: https://web.server.com/hook
     user: user
     password: "12345678"
+    message:
+        # must be "json" or "text"
+        format: json
+        # template must be a valid json if "format: json", or some text if "format:text"
+        # macros %HOSTNAME% and %MESSAGE% will replaced
+        template: '{"message":"Alert message from %HOSTNAME% %MESSAGE%"}'
 `
 
 type Config struct {
@@ -128,24 +134,20 @@ type UsersCheck struct {
 
 type NetworkCheck struct {
 	Enable bool `yaml:"enable"`
-	// BaseCheck `yaml:",inline"`
 }
 
 type PortsCheck struct {
 	Enable bool `yaml:"enable"`
-	// BaseCheck `yaml:",inline"`
 }
 
 type WebCheck struct {
 	Enable bool `yaml:"enable"`
-	// BaseCheck `yaml:",inline"`
 	URLs      []string `yaml:"urls"`
 }
 
 type FilesCheck struct {
-	Enable bool `yaml:"enable"`
-	// BaseCheck `yaml:",inline"`
-	Paths     []PathWatch `yaml:"paths"`
+	Enable bool        `yaml:"enable"`
+	Paths  []PathWatch `yaml:"paths"`
 }
 
 type ServicesCheck struct {
@@ -179,19 +181,24 @@ type EmailNotify struct {
 type MatrixNotify struct {
 	Enable       bool   `yaml:"enable"`
 	Server       string `yaml:"server"`
-	UserName         string `yaml:"user"`
+	UserName     string `yaml:"user"`
 	Password     string `yaml:"password"`
 	AccessToken  string `yaml:"access_token"`
 	RoomID       string `yaml:"room_id"`
 }
 
 type WebhookNotify struct {
-	Enable    bool   `yaml:"enable"`
-	URL       string `yaml:"url"`
-	User      string `yaml:"user"`
-	Password  string `yaml:"password"`
+    Enable    bool   `yaml:"enable"`
+    URL       string `yaml:"url"`
+    User      string `yaml:"user"`
+    Password  string `yaml:"password"`
+    Message   WebhookMessage `yaml:"message"`
 }
 
+type WebhookMessage struct {
+    Format    string `yaml:"format"`
+    Template  string `yaml:"template"`
+}
 
 func ConfigLoad(configFileName string) (*Config, error) {
 	f, err := os.Open(configFileName)
