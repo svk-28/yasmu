@@ -7,220 +7,345 @@
 // *******************************************************
 // Configuration management module.
 // Creating/reading a configuration file.
-// Displaying settings on the screen.package main
+// Displaying settings on the screen.
 // *******************************************************
 
 package main
 
 import (
-    "fmt"
-    "os"
-    "gopkg.in/ini.v1"
+	"fmt"
+	"os"
+
+	"gopkg.in/yaml.v3"
 )
 
-var ConfigTemplate = `
-[Daemon]
-checktimeout = 60
-logfile = watchdog.log
-workdir = ./
+// ConfigTemplate — Config file template
+var ConfigTemplate = `# =============================================================================
+# Watchdog configuration file.
+# =============================================================================
 
-[Checks]
-process = yes
-users = yes
-network = yes
-ports = yes
-web = no
-cron = yes
-files = no
+# -----------------------------------------------------------------------------
+# daemon — daemon mode parameters (launched with the -daemon flag).
+# -----------------------------------------------------------------------------
+daemon:
+  # Pause between check iterations, in seconds.
+  check_timeout: 60
+  # PID file for the daemon
+  pid_file: watchdog.pid
+  # Relative to work_dir unless absolute.
+  log_file: watchdog.log
+  # Working directory of the daemon. After daemonization the process chdirs here.
+  # Relative paths in the config are resolved against it.
+  work_dir: ./
 
-[Notify]
-email = no
-matrix = no
-webhook = no
+# -----------------------------------------------------------------------------
+# checks — which checks to run on each iteration.
+# -----------------------------------------------------------------------------
+checks:
+  # Detects changes in cron jobs (/etc/crontab, /etc/cron.d, user crontabs).
+  cron:
+    enable: false
 
-[Notify.email]
-server = smtp.server.com 
-port = 465
-user = user
-password = 12345678
-mailto = to@domain.com
-mailfrom = from@domain.com
-mailsubject = Alert message from %HOSTNAME$
+  # File system monitoring: file creation, modification, deletion.
+  files:
+    enable: true
 
-[Notify.matrix]
-server = matrix.server.com
-user = user
-password = 12345678
-room_id = 1qu2ueu4383jr4o83
-access_token = 
+    # List of roots to traverse. Each root has its own set of watched
+    # events and exclusions.
+    paths:
+      - path: /etc
+        # Which events to watch for this root:
+        #   create — new files/directories appear
+        #   modify — content, permissions, owner or mtime changes
+        #   delete — files/directories are removed
+        # If watch is omitted or empty, all events are tracked.
+        watch: [create, modify, delete]
+      - path: /dev
+        watch: [create, modify, delete]
+        # Subpaths to skip together with their entire contents.
+        # Directories are not traversed into (SkipDir).
+        # Matching is by exact path or by prefix with a separator:
+        #   /dev/pts    skips both /dev/pts and /dev/pts/0
+        #   /dev/ptsX   does NOT match the /dev/pts exclusion
+        exclude:
+          - /dev/pts
+          - /dev/tty
 
-[Notify.webhook]
-url = https://web.server.com/hook
-user = user
-password = 12345678
+  # Network connection checks (interface state, listeners, etc.).
+  network:
+    enable: false
 
+  # Open port checks: what is listening and on which interfaces.
+  ports:
+    enable: false
 
-[Checks.web]
-url = https://server.com
-url = https://git.server.com
-urs = ...
+  # Running process monitoring (PID, PPID, name, owner).
+  processes:
+    enable: false
 
-[Check.files]
-path = /etc
-path = ...
+    # List of substrings: if a process name contains any of them,
+    # the process is not included in the snapshot. Case-insensitive.
+    # Example: kworker/13:0-events, kworker/u64:3-... — all excluded.
+    exclude:
+      - kworker
+
+  # systemd service monitoring via D-Bus (LoadState, ActiveState, SubState, MainPID).
+  services:
+    enable: true
+
+    # List of units to monitor.
+    # If the list is empty (or commented out), ALL .service units are collected.
+    # If specified, only the listed ones are used.
+    # Short form without the suffix is allowed: "sshd" → "sshd.service".
+    # units:
+    #   - sshd.service
+    #   - nginx.service
+    #   - postgresql.service
+
+  # User monitoring: UID, home directory, groups, SSH keys.
+  users:
+    enable: false
+
+  # URL availability checks (HTTP GET, expecting 2xx).
+  web:
+    enable: false
+
+    # List of URLs to check. Order is preserved.
+    urls:
+      - https://server.com
+      - https://git.server.com
+
+# -----------------------------------------------------------------------------
+# Send alerts when changes are detected.
+# If all three are disabled, reports are only written to the log and not delivered anywhere.
+# -----------------------------------------------------------------------------
+notify:
+  # Send reports by email via SMTP.
+  # Both port 465 (implicit TLS) and 587 (STARTTLS) are supported.
+  email:
+    enable: false
+    # SMTP server.
+    server: smtp.server.com
+    # Port: 465 for implicit TLS, 587 for STARTTLS, 25 for plain.
+    port: 465
+    # SMTP login.
+    user: user
+    # Password. Quote it.
+    password: "12345678"
+    # Recipient.
+    mail_to: to@domain.com
+    # Sender.
+    mail_from: from@domain.com
+    # Email subject. The %HOSTNAME% macro is replaced with the FQDN.
+    mail_subject: "Alert message from %HOSTNAME%"
+
+  # Send reports to a Matrix room.
+  matrix:
+    enable: false
+    # Homeserver URL.
+    server: matrix.server.com
+    # Matrix login (full user id, e.g. @user:server.com, or short allowed).
+    user: user
+    # Matrix password.
+    password: "12345678"
+    # Access token. If set, it is used instead of user/password.
+    access_token: ""
+    # Room ID. Starts with "!" for rooms.
+    room_id: "!1qu2ueu4383jr4o83"
+
+  # Send reports via a POST request to an arbitrary URL.
+  webhook:
+    enable: false
+    # URL to POST to.
+    url: https://web.server.com/hook
+    # Basic auth: username.
+    user: user
+    # Basic auth: password.
+    password: "12345678"
+    # Request body settings.
+    message:
+        # Body format:
+        #   json — Content-Type: application/json, template must be valid JSON
+        #   text — Content-Type: text/plain, template is arbitrary text
+        format: json
+        # Request body template.
+        # Supported macros:
+        #   %HOSTNAME% — host FQDN
+        #   %MESSAGE%  — report text (produced by all checks combined)
+        template: '{"message":"Alert message from %HOSTNAME% %MESSAGE%"}'
 `
-type Daemon struct {
-    	CheckTimeout int    `ini:"checktimeout"`
-    	LogFile      string `ini:"logfile"`
-    	WorkDir      string `ini:"workdir"`
-     PidFile      string `ini:"pidfile"`
-}
 
 type Config struct {
-    Daemon  Daemon  `ini:"Daemon"`
-	Checks  Checks  `ini:"Checks"`
-	Notify  Notify  `ini:"Notify"`
+	Daemon DaemonConfig `yaml:"daemon"`
+	Checks ChecksConfig `yaml:"checks"`
+	Notify NotifyConfig `yaml:"notify"`
 }
 
-type Checks struct {
-	Process bool `ini:"process"`
-	Users   bool `ini:"users"`
-	Network bool `ini:"network"`
-	Ports   bool `ini:"ports"`
-	Web     bool `ini:"web"`
-	Cron    bool `ini:"cron"`
-	Files   bool `ini:"files"`
-
-	WebCheck WebCheckConfig `ini:"web"`
-    FilesPath FilesConfig `ini:"files"`
+type DaemonConfig struct {
+	CheckTimeout int    `yaml:"check_timeout"`
+	LogFile      string `yaml:"log_file"`
+	WorkDir      string `yaml:"work_dir"`
+	PidFile      string `yaml:"pid_file"`
 }
 
-type WebCheckConfig struct {
-	URLs []string `ini:"-"`
+// type BaseCheck struct {
+	// Enable bool `yaml:"enable"`
+// }
+
+type ChecksConfig struct {
+    Cron      CronCheck    `yaml:"cron"`
+    Processes ProcessCheck `yaml:"processes"`
+    Users     UsersCheck   `yaml:"users"`
+    Network   NetworkCheck `yaml:"network"`
+    Ports     PortsCheck   `yaml:"ports"`
+    Web       WebCheck     `yaml:"web"`
+    Files     FilesCheck   `yaml:"files"`
+    Services  ServicesCheck `yaml:"services"`
 }
 
-type Notify struct {
-	Email   bool `ini:"email"`
-	Matrix  bool `ini:"matrix"`
-	Webhook bool `ini:"webhook"`
-
-	EmailCfg  EmailConfig  `ini:"email"`
-	MatrixCfg MatrixConfig `ini:"matrix"`
-    WebhookCfg WebhookConfig `ini:"webhook"`
+type CronCheck struct {
+	Enable bool `yaml:"enable"`
 }
 
-type EmailConfig struct {
-	Server   string `ini:"server"`
-	Port     string `ini:"port"`
-	User     string `ini:"user"`
-	Password string `ini:"password"`
-    MailFrom string `ini:"mailfrom"`
-    MailTo   string `ini:"mailto"`
-    MailSubject string `ini:"mailsubject"`
+type ProcessCheck struct {
+	Enable bool `yaml:"enable"`
+    Exclude []string `yaml:"exclude"`
 }
 
-type MatrixConfig struct {
-	Server   string `ini:"server"`
-	User     string `ini:"user"`
-	Password string `ini:"password"`
-	RoomID   string `ini:"chatID"`
+type UsersCheck struct {
+	Enable bool `yaml:"enable"`
 }
 
-type WebhookConfig struct {
-	URL   string `ini:"url"`
-	User     string `ini:"user"`
-	Password string `ini:"password"`
+type NetworkCheck struct {
+	Enable bool `yaml:"enable"`
 }
 
-type FilesConfig struct {
-    Path []string `ini:"path"`
+type PortsCheck struct {
+	Enable bool `yaml:"enable"`
+}
+
+type WebCheck struct {
+	Enable bool `yaml:"enable"`
+	URLs      []string `yaml:"urls"`
+}
+
+type FilesCheck struct {
+	Enable bool        `yaml:"enable"`
+	Paths  []PathWatch `yaml:"paths"`
+}
+
+type ServicesCheck struct {
+    Enable bool     `yaml:"enable"`
+    Units  []string `yaml:"units"`
+}
+
+type PathWatch struct {
+	Path    string   `yaml:"path"`
+	Watch   []string `yaml:"watch"`   // "create", "modify", "delete"
+	Exclude []string `yaml:"exclude"`
+}
+
+type NotifyConfig struct {
+	Email   EmailNotify   `yaml:"email"`
+	Matrix  MatrixNotify  `yaml:"matrix"`
+	Webhook WebhookNotify `yaml:"webhook"`
+}
+
+type EmailNotify struct {
+	Enable      bool   `yaml:"enable"`
+	Server      string `yaml:"server"`
+	Port        int    `yaml:"port"`
+	User        string `yaml:"user"`
+	Password    string `yaml:"password"`
+	MailTo      string `yaml:"mail_to"`
+	MailFrom    string `yaml:"mail_from"`
+	MailSubject string `yaml:"mail_subject"`
+}
+
+type MatrixNotify struct {
+	Enable       bool   `yaml:"enable"`
+	Server       string `yaml:"server"`
+	UserName     string `yaml:"user"`
+	Password     string `yaml:"password"`
+	AccessToken  string `yaml:"access_token"`
+	RoomID       string `yaml:"room_id"`
+}
+
+type WebhookNotify struct {
+    Enable    bool   `yaml:"enable"`
+    URL       string `yaml:"url"`
+    User      string `yaml:"user"`
+    Password  string `yaml:"password"`
+    Message   WebhookMessage `yaml:"message"`
+}
+
+type WebhookMessage struct {
+    Format    string `yaml:"format"`
+    Template  string `yaml:"template"`
 }
 
 func ConfigLoad(configFileName string) (*Config, error) {
-	cfg, err := ini.LoadSources(ini.LoadOptions{
-		AllowShadows:    true,
-		AllowBooleanKeys: true,
-		Insensitive:     true,
-	}, configFileName)
-	if err != nil {
-		return nil, fmt.Errorf("load ini: %w", err)
-	}
+	f, err := os.Open(configFileName)
+    if err != nil {
+        return nil, fmt.Errorf("open config: %w\n\rTry running 'watchdog -make-config'", err)
+    }
+	defer f.Close()
 
 	var c Config
+	dec := yaml.NewDecoder(f)
+	dec.KnownFields(true)
+	if err := dec.Decode(&c); err != nil {
+		return nil, fmt.Errorf("decode yaml: %w", err)
+	}
 
-    // 1. Маппим корневые секции
-    if err := cfg.Section("Daemon").MapTo(&c.Daemon); err != nil {
-        return nil, fmt.Errorf("map Daemon: %w", err)
-    }
-    if err := cfg.Section("Checks").MapTo(&c.Checks); err != nil {
-        return nil, fmt.Errorf("map Checks: %w", err)
-    }
-    if err := cfg.Section("Notify").MapTo(&c.Notify); err != nil {
-        return nil, fmt.Errorf("map Notify: %w", err)
-    }
-
-    // 2. Маппим вложенные секции по полному пути
-    if err := cfg.Section("Notify.email").MapTo(&c.Notify.EmailCfg); err != nil {
-        return nil, fmt.Errorf("map Notify.email: %w", err)
-    }
-    if err := cfg.Section("Notify.matrix").MapTo(&c.Notify.MatrixCfg); err != nil {
-        return nil, fmt.Errorf("map Notify.matrix: %w", err)
-    }
-    if err := cfg.Section("Notify.webhook").MapTo(&c.Notify.WebhookCfg); err != nil {
-        return nil, fmt.Errorf("map Notify.webhook: %w", err)
-    }
-
-	// Отдельно вычитываем повторяющиеся url из [Checks.web]
-	urls := cfg.Section("Checks.web").Key("url").ValueWithShadows()
-	c.Checks.WebCheck.URLs = urls
-
-	// Отдельно вычитываем повторяющиеся path из [Checks.files]
-	path := cfg.Section("Checks.files").Key("path").ValueWithShadows()
-	c.Checks.FilesPath.Path = path
+	if err := c.validate(); err != nil {
+		return nil, err
+	}
 
 	return &c, nil
 }
 
-func ConfigShow(cfg *Config) {
-   	fmt.Printf("Пауза между проверками при запуске как службы (демон) в сек.: %v\n", cfg.Daemon.CheckTimeout)
-   	fmt.Printf("Проверять процессы (processes): %v\n", cfg.Checks.Process)
-	fmt.Printf("Проверять пользователей (users): %v\n", cfg.Checks.Users)
-	fmt.Printf("Проверять соединения (network): %v\n", cfg.Checks.Network)
-	fmt.Printf("Проверять открытые порты (ports): %v\n", cfg.Checks.Ports)
-	fmt.Printf("Проверять cron (cron): %v\n", cfg.Checks.Cron)
-	fmt.Printf("Проверять web: %v\n", cfg.Checks.Web)
-	fmt.Printf("\tURL для проверки: %v\n", cfg.Checks.WebCheck.URLs)
-    
-    fmt.Printf("\nОповещение:\n")
-    fmt.Printf("\tE-mail: %v\n", cfg.Notify.Email)
-	fmt.Printf("\t\tSMTP: %s:%d, user=%s\n",
-		cfg.Notify.EmailCfg.Server,
-		cfg.Notify.EmailCfg.Port,
-		cfg.Notify.EmailCfg.User,
-	)
-    fmt.Printf("\tMatrix: %v\n", cfg.Notify.Matrix)
-	fmt.Printf("\t\tServer: %s, user=%s, chat id:%s \n",
-		cfg.Notify.MatrixCfg.Server,
-		cfg.Notify.MatrixCfg.User,
-		cfg.Notify.MatrixCfg.ChatID,
-	)
-    fmt.Printf("\tWeb hook: %v\n", cfg.Notify.Webhook)
-	fmt.Printf("\t\tURL: %s, user=%s, password=%s\n",
-		cfg.Notify.WebhookCfg.URL,
-		cfg.Notify.WebhookCfg.User,
-		cfg.Notify.WebhookCfg.Password,
-	)
+// validate - checks the required fields for the included sections
+func (c *Config) validate() error {
+	if c.Notify.Email.Enable {
+		if c.Notify.Email.Server == "" {
+			return fmt.Errorf("notify.email.server is required when email is enabled")
+		}
+		if c.Notify.Email.MailFrom == "" || c.Notify.Email.MailTo == "" {
+			return fmt.Errorf("notify.email.mail_from and mail_to are required")
+		}
+	}
+	if c.Notify.Matrix.Enable && c.Notify.Matrix.Server == "" {
+		return fmt.Errorf("notify.matrix.server is required when matrix is enabled")
+	}
+	if c.Notify.Webhook.Enable && c.Notify.Webhook.URL == "" {
+		return fmt.Errorf("notify.webhook.url is required when webhook is enabled")
+	}
+	if c.Checks.Web.Enable && len(c.Checks.Web.URLs) == 0 {
+		return fmt.Errorf("checks.web.urls is empty but web check is enabled")
+	}
+	if c.Checks.Files.Enable && len(c.Checks.Files.Paths) == 0 {
+		return fmt.Errorf("checks.files.paths is empty but files check is enabled")
+	}
+	return nil
 }
 
-func ConfigMake(cfgTmpl string, cfgFileName string) {
-    file, err := os.Create(cfgFileName)
-     
-    if err != nil{
-        fmt.Println("Unable to create file:", err) 
-        os.Exit(1) 
-    }
-    defer file.Close() 
-    file.WriteString(cfgTmpl)
-     
-    fmt.Printf("Config file '%s' has been created.\n", cfgFileName)
+// ConfigMake - Creates a configuration file from a template (ConfigTemplate)
+func ConfigMake(cfgTmpl, cfgFileName string) error {
+	if _, err := os.Stat(cfgFileName); err == nil {
+		return fmt.Errorf("config file already exists: %s", cfgFileName)
+	}
+
+	file, err := os.Create(cfgFileName)
+	if err != nil {
+		return fmt.Errorf("create file: %w", err)
+	}
+	defer file.Close()
+
+	if _, err := file.WriteString(cfgTmpl); err != nil {
+		return fmt.Errorf("write template: %w", err)
+	}
+
+	fmt.Printf("Config file '%s' has been created.\n", cfgFileName)
+	return nil
 }
