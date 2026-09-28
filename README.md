@@ -1,15 +1,16 @@
-## About Watchdog
+## YASMU - Yet Another System Monitoring Utility
 
-A utility for monitoring system integrity. And for web monitoring of websites availability.
+YASMU - is a lightweight integrity and availability monitoring tool for Linux systems. It periodically snapshots and compares:
 
-* [x] Runing process
-* [x] System (systemd) services (enabling, disabling, starting, stoping)
-* [x] Users
-* [] Listen ports
-* [] Network connections
-* [] Cron (crontab) files
-* [x] URL available
-* [x] Directory and files (creating, deleting and changes, hash)
+Files — metadata and BLAKE3 checksums, with per-path watch filters.
+
+Users — UID, home directory, groups, SSH keys.
+
+Processes — PID, PPID, owner, executable path, deleted binaries.
+
+Services — systemd units via D-Bus.
+
+Web endpoints — HTTP status and response codes.
 
 ## Notifaction
 
