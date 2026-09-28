@@ -1,10 +1,12 @@
-// ********************************************************************
-// Watchdog - the utility for monitoring system integrity.
+// *******************************************************
+// YASMU - Yet Another System Monitoring Utility
+// The utility for monitoring system integrity.
 // And for web monitoring of websites availability.
-// ********************************************************************
+// *******************************************************
 // Author: Sergey Kalinin
+// Home page: https://nuk-svk.ru
 // License: GPL v3
-// ********************************************************************
+// *******************************************************
 // User verification module.
 // Allows you to control groups, password changes, and changes to the
 // home directory.
@@ -369,4 +371,3 @@ func sshKeysToString(keys []SSHKey) string {
     sort.Strings(parts)
     return strings.Join(parts, "; ")
 }
-

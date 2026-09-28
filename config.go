@@ -1,8 +1,10 @@
 // *******************************************************
-// Watchdog - the utility for monitoring system integrity.
+// YASMU - Yet Another System Monitoring Utility
+// The utility for monitoring system integrity.
 // And for web monitoring of websites availability.
 // *******************************************************
 // Author: Sergey Kalinin
+// Home page: https://nuk-svk.ru
 // License: GPL v3
 // *******************************************************
 // Configuration management module.

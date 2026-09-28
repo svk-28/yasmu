@@ -1,10 +1,12 @@
-// ********************************************************************
-// Watchdog - the utility for monitoring system integrity.
+// *******************************************************
+// YASMU - Yet Another System Monitoring Utility
+// The utility for monitoring system integrity.
 // And for web monitoring of websites availability.
-// ********************************************************************
+// *******************************************************
 // Author: Sergey Kalinin
+// Home page: https://nuk-svk.ru
 // License: GPL v3
-// ********************************************************************
+// *******************************************************
 // Process monitoring module.
 // Collects running processes and compares with the
 // previous snapshot to detect changes.
@@ -19,13 +21,18 @@ import (
     "strings"
 
     "github.com/shirou/gopsutil/v4/process"
+    // For bsd systems
+    // "github.com/tklauser/ps"
 )
 
 type ProcessMeta struct {
-    PID   int32  // process ID
-    PPID  int32  // parent process id
-    Name  string // process name
-    Owner string // process owner
+    PID        int32  // process ID
+    PPID       int32  // parent process id
+    Name       string // process name
+    Owner      string // process owner
+    Exe        string // path to executable file
+    Deleted    bool   // process with deleted exe
+    Suspicious bool
 }
 
 type ProcessList map[int32]ProcessMeta
@@ -67,7 +74,25 @@ func CompareProcessLists(base, actual ProcessList) ProcessDiffResult {
         if b.Owner != a.Owner {
             changes = append(changes, FieldChange{"owner", b.Owner, a.Owner})
         }
+        if b.Exe != a.Exe {
+            changes = append(changes, FieldChange{"exe", b.Exe, a.Exe})
+        }
 
+        if b.Deleted != a.Deleted {
+            changes = append(changes, FieldChange{
+                "deleted",
+                fmt.Sprint(b.Deleted),
+                fmt.Sprint(a.Deleted),
+            })
+        }
+        // if b.Suspicious != a.Suspicious {
+            // changes = append(changes, FieldChange{
+                // "suspicious",
+                // fmt.Sprint(b.Suspicious),
+                // fmt.Sprint(a.Suspicious),
+            // })
+        // }
+        
         if len(changes) > 0 {
             res.Changed = append(res.Changed, ProcessDiff{PID: pid, Changes: changes})
         } else {
@@ -101,7 +126,7 @@ func PrintProcessesDiff(d ProcessDiffResult, base, actual ProcessList, showUncha
         for _, pid := range d.OnlyInBase {
             name := ""
             if meta, ok := base[pid]; ok && meta.Name != "" {
-                name = " (" + meta.Name + ")"
+                name = " (" + meta.Name + ", " + meta.Exe + ")"
             }
             fmt.Fprintf(&sb, "   - PID %d%s\n", pid, name)
         }
@@ -112,7 +137,7 @@ func PrintProcessesDiff(d ProcessDiffResult, base, actual ProcessList, showUncha
         for _, pid := range d.OnlyInActual {
             name := ""
             if meta, ok := actual[pid]; ok && meta.Name != "" {
-                name = " (" + meta.Name + ")"
+                name = " (" + meta.Name + ", " + meta.Exe + ")"
                 if meta.Owner != "" {
                     name += ", owner=" + meta.Owner
                 }
@@ -129,7 +154,7 @@ func PrintProcessesDiff(d ProcessDiffResult, base, actual ProcessList, showUncha
         for _, pd := range d.Changed {
             name := ""
             if meta, ok := actual[pd.PID]; ok && meta.Name != "" {
-                name = " (" + meta.Name + ")"
+                name = " (" + meta.Name + ", " + meta.Exe + ")"
             }
             fmt.Fprintf(&sb, "   ~ PID %d%s\n", pd.PID, name)
             for _, ch := range pd.Changes {
@@ -160,46 +185,6 @@ func PrintProcessesDiff(d ProcessDiffResult, base, actual ProcessList, showUncha
     return ""
 }
 
-func GetProcessesList(exclude []string) (ProcessList, []error) {
-    result := make(ProcessList)
-    var errs []error
-
-    procs, err := process.Processes()
-    if err != nil {
-        return nil, []error{fmt.Errorf("list processes: %w", err)}
-    }
-
-    for _, p := range procs {
-        meta := ProcessMeta{PID: p.Pid}
-
-        if ppid, err := p.Ppid(); err == nil {
-            meta.PPID = ppid
-        } else {
-            errs = append(errs, fmt.Errorf("pid %d: ppid: %w", p.Pid, err))
-        }
-
-        if name, err := p.Name(); err == nil {
-            meta.Name = name
-        } else {
-            errs = append(errs, fmt.Errorf("pid %d: name: %w", p.Pid, err))
-        }
-        // Procces name filter
-        if isProcessExcluded(meta.Name, exclude) {
-            continue
-        }
-
-        if user, err := p.Username(); err == nil {
-            meta.Owner = user
-        } else {
-            errs = append(errs, fmt.Errorf("pid %d: username: %w", p.Pid, err))
-        }
-
-        result[p.Pid] = meta
-    }
-
-    return result, errs
-}
-
 func cloneProcessList(src ProcessList) ProcessList {
     dst := make(ProcessList, len(src))
     for k, v := range src {
@@ -223,6 +208,88 @@ func isProcessExcluded(name string, exclude []string) bool {
         }
     }
     return false
+}
+
+func isLinuxKernelThread(name string) bool {
+    if name == "" {
+        return true
+    }
+    prefixes := []string{
+        "kworker",        // workqueue workers
+        "ksoftirqd",      // softirq daemon
+        "kthreadd",       // kernel thread daemon
+        "migration",      // CPU migration
+        "rcu_",           // RCU callbacks
+        "kcompactd",      // memory compaction
+        "kswapd",         // swap daemon
+        "khugepaged",     // huge pages
+        "cpuhp/",         // CPU hotplug
+        "idle_inject/",   // idle injection
+        "scsi_",          // SCSI error handler
+        "irq/",           // IRQ threads
+        "kdevtmpfs",      // devtmpfs
+        "netns",          // network namespaces
+        "kauditd",        // audit daemon
+        "kblockd",        // block device workers
+        "kintegrityd",    // integrity
+        "kdmflush",       // device-mapper
+        "kaluad",         // ALUA
+        "kmpath_",        // multipath
+    }
+    for _, p := range prefixes {
+        if strings.HasPrefix(name, p) {
+            return true
+        }
+    }
+    return false
+}
+
+func GetProcessesList(exclude []string) (ProcessList, []error) {
+    result := make(ProcessList)
+    var errs []error
+
+    procs, err := process.Processes()
+    if err != nil {
+        return nil, []error{fmt.Errorf("list processes: %w", err)}
+    }
+
+    for _, p := range procs {
+        rawExe, exeErr := p.Exe()
+        name, _ := p.Name()
+
+        if exeErr != nil && isLinuxKernelThread(name) {
+            continue
+        }
+
+        meta := ProcessMeta{
+            PID: p.Pid,
+            Name: name,
+        }
+
+        if rawExe != "" {
+            meta.Exe = strings.TrimSuffix(rawExe, " (deleted)")
+            meta.Deleted = strings.Contains(rawExe, "(deleted)")
+        } else if name != "" {
+            // An empty EXE in a non‑kernel‑thread process is suspicious.
+            meta.Suspicious = true
+        }
+
+        if ppid, err := p.Ppid(); err == nil {
+            meta.PPID = ppid
+        }
+
+        if user, err := p.Username(); err == nil {
+            meta.Owner = user
+        }
+
+        if isProcessExcluded(meta.Name, exclude) {
+            continue
+        }
+
+        result[p.Pid] = meta
+    }
+
+    return result, errs
 }
 
 func ProcessesCheck(exclude []string, previousProcessList ProcessList) (ProcessList, string) {

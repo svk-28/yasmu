@@ -1,8 +1,10 @@
 // *******************************************************
-// Watchdog - the utility for monitoring system integrity.
+// YASMU - Yet Another System Monitoring Utility
+// The utility for monitoring system integrity.
 // And for web monitoring of websites availability.
 // *******************************************************
 // Author: Sergey Kalinin
+// Home page: https://nuk-svk.ru
 // License: GPL v3
 // *******************************************************
 
@@ -52,6 +54,7 @@ func runChecks(cfg *Config) {
         resultOfUsersCheck     string
         resultOfServicesCheck  string
         resultOfProcessesCheck string
+        resultOfWebCheck       string
         summaryReport          strings.Builder
     )
     // *********** Users Checks ***************
@@ -94,21 +97,16 @@ func runChecks(cfg *Config) {
 	}
 
     // *********** Web Links Checks ***************
-	if cfg.Checks.Web.Enable {
-		for _, v := range cfg.Checks.Web.URLs {
-			log.Println(v)
-			status, response := checklibs.WebCheck(v)
-			if status {
-				log.Printf("URL %s check status is %t\n", v, status)
-			} else {
-				log.Printf("URL %s check status error\n", v)
-				log.Println(response)
-				fmt.Fprintf(&summaryReport, "===\nURL %s check status error\n", v)
-				fmt.Fprintf(&summaryReport, "%s\n", response)
-			}
-		}
-	}
-
+    if cfg.Checks.Web.Enable {
+        previousUrlList, resultOfWebCheck = checklibs.WebCheck(cfg.Checks.Web.URLs, previousUrlList)
+        if resultOfWebCheck != "" {
+            fmt.Fprintf(&summaryReport, "\n========= Changes in web checks have been recorded =========\n")
+            log.Println(resultOfWebCheck)
+            summaryReport.WriteString(resultOfWebCheck)
+        } else {
+            log.Println("No web changes have been recorded.")
+        }
+    }
     // *********** Files And Directories Checks ***************
     if cfg.Checks.Files.Enable {
 	    paths := make([]checklibs.PathSpec, 0, len(cfg.Checks.Files.Paths))
