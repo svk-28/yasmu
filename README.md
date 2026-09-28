@@ -2,15 +2,11 @@
 
 YASMU - is a lightweight integrity and availability monitoring tool for Linux systems. It periodically snapshots and compares:
 
-Files — metadata and BLAKE3 checksums, with per-path watch filters.
-
-Users — UID, home directory, groups, SSH keys.
-
-Processes — PID, PPID, owner, executable path, deleted binaries.
-
-Services — systemd units via D-Bus.
-
-Web endpoints — HTTP status and response codes.
+* Files — metadata and checksums, with per-path watch filters.
+* Users — UID, home directory, groups, SSH keys.
+* Processes — PID, PPID, owner, executable path and more.
+* Services — systemd units via D-Bus.
+* Web endpoints — HTTP status and response codes.
 
 ## Notifaction
 
