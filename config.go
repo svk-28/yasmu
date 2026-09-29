@@ -26,9 +26,7 @@ var ConfigTemplate = `# ========================================================
 # YASMU configuration file.
 # =============================================================================
 
-# -----------------------------------------------------------------------------
-# daemon — daemon mode parameters (launched with the -daemon flag).
-# -----------------------------------------------------------------------------
+# Demon mode parameters (launched with the -daemon flag).
 daemon:
   # Pause between check iterations, in seconds.
   check_timeout: 60
@@ -40,12 +38,10 @@ daemon:
   # Relative paths in the config are resolved against it.
   work_dir: ./
 
-# -----------------------------------------------------------------------------
 # checks — which checks to run on each iteration.
 # Every section has its own "enable" flag; when false the check is skipped.
-# -----------------------------------------------------------------------------
 checks:
-  # --- connections -----------------------------------------------------------
+  # Connections
   # Rule-based network connections monitoring.
   # Rule fields:
   #   name            — rule name shown in the report (required)
@@ -67,7 +63,7 @@ checks:
   connections:
     enable: false
     rules:
-      # 1) SSH must be reachable only from the LAN / office VPN.
+      # SH must be reachable only from the LAN / office VPN.
       # Any ESTABLISHED connection on port 22 from a remote outside the
       # allowed list is a violation.
       - name: "SSH from allowed networks"
@@ -80,7 +76,7 @@ checks:
           - 172.16.0.0/12
           - 127.0.0.0/8
 
-      # 2) PostgreSQL must accept connections only from the LAN.
+      # PostgreSQL must accept connections only from the LAN.
       - name: "PostgreSQL from LAN only"
         proto: tcp
         port: 5432
@@ -89,7 +85,7 @@ checks:
           - 10.0.0.0/8
           - 127.0.0.1
 
-      # 3) Interpreters must not open external connections.
+      # Interpreters must not open external connections.
       # Any ESTABLISHED connection owned by python/python3/php/... to a remote
       # outside the allowed list is a violation.
       #
@@ -116,7 +112,7 @@ checks:
           - 127.0.0.1
           - 10.0.0.0/8
 
-      # 4) Shells must never have network connections.
+      # Shells must never have network connections.
       # Any ESTABLISHED TCP connection owned by a shell is a violation,
       # regardless of the remote address.
       - name: "shell must not have network connections"
@@ -131,8 +127,8 @@ checks:
           - fish
         alert_on_match: true
 
-      # 5) (Optional) Deny outbound DNS-over-TCP from anything except the
-      #     system resolver. Useful on locked-down servers.
+      # (Optional) Deny outbound DNS-over-TCP from anything except the
+      # system resolver. Useful on locked-down servers.
       # - name: "DNS TCP only from resolver"
       #   proto: tcp
       #   port: 53
@@ -140,7 +136,7 @@ checks:
       #   allowed_remote:
       #     - 127.0.0.1
       #     - 10.0.0.53
-  # --- files -----------------------------------------------------------------
+
   # File system monitoring: file creation, modification, deletion.
   files:
     enable: true
@@ -207,7 +203,6 @@ checks:
        #     - /lib/systemd/system/*.wants
        #     - /lib/systemd/system-generators
 
-  # --- ports -----------------------------------------------------------------
   # Open port checks: what is listening and on which interfaces.
   ports:
     enable: false
@@ -215,7 +210,6 @@ checks:
     # Leave false unless you really need it.
     established: false
 
-  # --- processes -------------------------------------------------------------
   # Running process monitoring (PID, PPID, name, owner, executable path).
   processes:
     enable: false
@@ -226,7 +220,6 @@ checks:
     exclude:
       - kworker
 
-  # --- services --------------------------------------------------------------
   # systemd service monitoring via D-Bus (LoadState, ActiveState, SubState, MainPID).
   services:
     enable: false
@@ -239,12 +232,10 @@ checks:
     #   - nginx.service
     #   - postgresql.service
 
-  # --- users -----------------------------------------------------------------
   # User monitoring: UID, home directory, groups, SSH keys.
   users:
     enable: false
 
-  # --- web -------------------------------------------------------------------
   # URL availability checks (HTTP GET, expecting 2xx).
   web:
     enable: false
@@ -255,13 +246,9 @@ checks:
       - https://git.server.com
 
 
-# -----------------------------------------------------------------------------
 # notify — send alerts when changes are detected.
 # If all three are disabled, reports are only written to the log.
-# -----------------------------------------------------------------------------
 notify:
-
-  # --- email -----------------------------------------------------------------
   # Send reports by email via SMTP.
   # Both port 465 (implicit TLS) and 587 (STARTTLS) are supported.
   email:
@@ -281,7 +268,6 @@ notify:
     # Email subject. The %HOSTNAME% macro is replaced with the FQDN.
     mail_subject: "Alert message from %HOSTNAME%"
 
-  # --- matrix ----------------------------------------------------------------
   # Send reports to a Matrix room.
   matrix:
     enable: false
@@ -296,7 +282,6 @@ notify:
     # Room ID. Starts with "!" for rooms.
     room_id: "!1qu2ueu4383jr4o83"
 
-  # --- webhook ---------------------------------------------------------------
   # Send reports via a POST request to an arbitrary URL.
   webhook:
     enable: false
@@ -331,10 +316,6 @@ type DaemonConfig struct {
 	WorkDir      string `yaml:"work_dir"`
 	PidFile      string `yaml:"pid_file"`
 }
-
-// type BaseCheck struct {
-	// Enable bool `yaml:"enable"`
-// }
 
 type ChecksConfig struct {
     Processes     ProcessCheck      `yaml:"processes"`
