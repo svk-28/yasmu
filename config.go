@@ -200,6 +200,12 @@ checks:
           exclude:
             - /home/*/.cache
             - /home/*/.local/share/Trash
+       # - path: /lib/systemd/system
+       #   watch: [create, modify, delete]
+       #   hash: blake3
+       #   exclude:
+       #     - /lib/systemd/system/*.wants
+       #     - /lib/systemd/system-generators
 
   # --- ports -----------------------------------------------------------------
   # Open port checks: what is listening and on which interfaces.
@@ -224,7 +230,6 @@ checks:
   # systemd service monitoring via D-Bus (LoadState, ActiveState, SubState, MainPID).
   services:
     enable: false
-
     # List of units to monitor.
     # If the list is empty (or commented out), ALL .service units are collected.
     # If specified, only the listed ones are used.

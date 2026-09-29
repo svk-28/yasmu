@@ -16,11 +16,12 @@ import (
     "fmt"
     "log"
     "os"
-    // "io"
+    "errors"
     "os/signal"
     "strings"
     "syscall"
     "time"
+    "strconv"
 
     "watchdog/checklibs"
     "watchdog/mainlibs"
@@ -30,14 +31,15 @@ import (
 )
 
 const (
-	Version = "0.0.2"
+	Version = "1.0.0"
 )
 
 var (
-	ConfigFile  string
-	RunAsDaemon bool
-	MakeConfig  bool
-	RunOnce     bool
+    ConfigFile  string
+    RunAsDaemon bool
+    MakeConfig  bool
+    RunOnce     bool
+    StopDaemon  bool
 )
 
 var (
@@ -46,7 +48,7 @@ var (
     previousUsersList   checklibs.UserList
     previousServiceList checklibs.ServiceList
     previousProcessList checklibs.ProcessList
-    previousPortList    checklibs.PortList // пакетная переменная
+    previousPortList    checklibs.PortList
 
 )
 
@@ -226,32 +228,40 @@ func DaemonRun(cfg *Config) {
 	log.Println("Daemon stopped")
 }
 
-// escapeJSONBody escapes characters that break JSON if they end up
-// inside string values: real line breaks, tabs, quotation marks, backslashes.
-// The outer curly braces and the structure are not touched — this is a "blind" escape,
-// suitable for simple cases when the template is assembled manually.
-func escapeJSONString(s string) string {
-	var b strings.Builder
-	b.Grow(len(s) + 16)
+func DaemonStop(pidFile string) error {
+    data, err := os.ReadFile(pidFile)
+    if err != nil {
+        if os.IsNotExist(err) {
+            return fmt.Errorf("daemon is not running: pid file %s not found", pidFile)
+        }
+        return fmt.Errorf("read pid file %s: %w", pidFile, err)
+    }
 
-	for i := 0; i < len(s); i++ {
-		ch := s[i]
-		switch ch {
-		case '\n':
-			b.WriteString(`\n`)
-		case '\r':
-			b.WriteString(`\r`)
-		case '\t':
-			b.WriteString(`\t`)
-		case '"':
-			b.WriteString(`\"`)
-		case '\\':
-			b.WriteString(`\\`)
-		default:
-			b.WriteByte(ch)
-		}
-	}
-	return b.String()
+    pidStr := strings.TrimSpace(string(data))
+    if pidStr == "" {
+        return fmt.Errorf("pid file %s is empty", pidFile)
+    }
+
+    pid, err := strconv.Atoi(pidStr)
+    if err != nil {
+        return fmt.Errorf("invalid pid %q in %s: %w", pidStr, pidFile, err)
+    }
+
+    proc, err := os.FindProcess(pid)
+    if err != nil {
+        return fmt.Errorf("find process %d: %w", pid, err)
+    }
+
+    if err := proc.Signal(syscall.SIGTERM); err != nil {
+        if errors.Is(err, os.ErrProcessDone) || errors.Is(err, syscall.ESRCH) {
+            _ = os.Remove(pidFile)
+            return nil
+        }
+        return fmt.Errorf("signal process %d: %w", pid, err)
+    }
+
+    log.Printf("Daemon (pid %d) stopped.\n", pid)
+    return nil
 }
 
 func SendNotifycation(cfg *Config, msg string) {
@@ -318,7 +328,7 @@ func SendNotifycation(cfg *Config, msg string) {
 
         escMsg := msg
         if cfg.Notify.Webhook.Message.Format == "json" {
-	        escMsg = escapeJSONString(msg)
+	        escMsg = mainlibs.EscapeJSONString(msg)
         }
         messageForSending := strings.ReplaceAll(cfg.Notify.Webhook.Message.Template, "%HOSTNAME%", hostname)
         messageForSending = strings.ReplaceAll(messageForSending, "%MESSAGE%", escMsg)
@@ -334,6 +344,7 @@ func SendNotifycation(cfg *Config, msg string) {
 
 func main() {
 	flag.BoolVar(&RunAsDaemon, "daemon", false, "Run the programm as a daemon")
+	flag.BoolVar(&StopDaemon, "stop-daemon", false, "Stop the programm runing as a daemon")
 	flag.BoolVar(&RunOnce, "run-once", false, "Run the programm one time")
 	flag.StringVar(&ConfigFile, "config", "config.yaml", "Config file with full path")
 	flag.BoolVar(&MakeConfig, "make-config", false, "Generate config file")
@@ -365,11 +376,20 @@ func main() {
 		syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	if RunAsDaemon {
-		DaemonRun(cfg)
-	} else if RunOnce {
-		runChecks(cfg)
-	} else {
-		RunService(ctx, cfg)
-	}
+    if StopDaemon {
+        err = DaemonStop(cfg.Daemon.PidFile)
+        if err != nil {
+            log.Println("Daemon stop error:", err)
+        }
+        os.Exit(0)
+    }
+
+    if RunAsDaemon {
+        DaemonRun(cfg)
+    } else if RunOnce {
+        runChecks(cfg)
+    } else {
+        RunService(ctx, cfg)
+    }
+
 }
