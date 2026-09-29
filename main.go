@@ -46,6 +46,8 @@ var (
     previousUsersList   checklibs.UserList
     previousServiceList checklibs.ServiceList
     previousProcessList checklibs.ProcessList
+    previousPortList    checklibs.PortList // пакетная переменная
+
 )
 
 func runChecks(cfg *Config) {
@@ -55,6 +57,7 @@ func runChecks(cfg *Config) {
         resultOfServicesCheck  string
         resultOfProcessesCheck string
         resultOfWebCheck       string
+        resultOfPortsCheck     string
         summaryReport          strings.Builder
     )
     // *********** Users Checks ***************
@@ -87,14 +90,41 @@ func runChecks(cfg *Config) {
     }
 
     // *********** Network Connections Checks ***************
-	if cfg.Checks.Network.Enable {
-		checklibs.NetworkCheck()
-	}
+    if cfg.Checks.Connections.Enable {
+        rules := make([]checklibs.ConnRule, 0, len(cfg.Checks.Connections.Rules))
+        for _, r := range cfg.Checks.Connections.Rules {
+            rules = append(rules, checklibs.ConnRule{
+                Name:          r.Name,
+                Proto:         r.Proto,
+                Port:          r.Port,
+                Processes:     r.Processes,
+                State:         r.State,
+                AllowedRemote: r.AllowedRemote,
+                AlertOnMatch:  r.AlertOnMatch,
+            })
+        }
+    
+        if resultOfConnCheck := checklibs.ConnectionsCheck(rules); resultOfConnCheck != "" {
+            log.Println("Connection rule violations have been recorded:")
+            log.Println(resultOfConnCheck)
+            fmt.Fprintf(&summaryReport, "\n========= Connection rule violations have been recorded =========\n")
+            summaryReport.WriteString(resultOfConnCheck)
+        } else {
+            log.Println("No connection rule violations.")
+        }
+    }
 
     // *********** Network Ports Checks ***************
-	if cfg.Checks.Ports.Enable {
-		checklibs.PortsCheck()
-	}
+    if cfg.Checks.Ports.Enable {
+        previousPortList, resultOfPortsCheck = checklibs.PortsCheck(previousPortList)
+        if resultOfPortsCheck != "" {
+            log.Println("Changes in ports have been recorded:")
+            log.Println(resultOfPortsCheck)
+            summaryReport.WriteString(resultOfPortsCheck)
+        } else {
+            log.Println("No port changes have been recorded.")
+        }
+    }
 
     // *********** Web Links Checks ***************
     if cfg.Checks.Web.Enable {

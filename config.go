@@ -23,7 +23,7 @@ import (
 
 // ConfigTemplate — Config file template
 var ConfigTemplate = `# =============================================================================
-# Watchdog configuration file.
+# YASMU configuration file.
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -32,22 +32,115 @@ var ConfigTemplate = `# ========================================================
 daemon:
   # Pause between check iterations, in seconds.
   check_timeout: 60
-  # PID file for the daemon
-  pid_file: watchdog.pid
-  # Relative to work_dir unless absolute.
-  log_file: watchdog.log
+  # PID file for the daemon.
+  pid_file: yasmu.pid
+  # Log file. Relative to work_dir unless absolute.
+  log_file: yasmu.log
   # Working directory of the daemon. After daemonization the process chdirs here.
   # Relative paths in the config are resolved against it.
   work_dir: ./
 
 # -----------------------------------------------------------------------------
 # checks — which checks to run on each iteration.
+# Every section has its own "enable" flag; when false the check is skipped.
 # -----------------------------------------------------------------------------
 checks:
-  # Detects changes in cron jobs (/etc/crontab, /etc/cron.d, user crontabs).
-  cron:
+  # --- connections -----------------------------------------------------------
+  # Rule-based network connections monitoring.
+  # Rule fields:
+  #   name            — rule name shown in the report (required)
+  #   proto           — "tcp" / "udp" (empty = any)
+  #   port            — local port (0 = any)
+  #   state           — TCP state: ESTABLISHED, TIME_WAIT, ... (empty = any)
+  #   processes       — list of exact process basenames (empty = any process)
+  #                     Compared against "basename /proc/<pid>/exe".
+  #                     Case-insensitive. NOT substrings — exact match.
+  #   allowed_remote  — list of IPs / CIDRs that are allowed for this rule.
+  #                     Any connection from a remote NOT in the list → violation.
+  #                     Ignored when alert_on_match: true.
+  #   alert_on_match  — if true, the rule describes FORBIDDEN traffic:
+  #                     any match → violation, allowed_remote is ignored.
+  #
+  # Two kinds of rules:
+  #   * allowed_remote (whitelist) — "traffic must come only from these nets"
+  #   * alert_on_match: true       — "this must never happen"
+  connections:
     enable: false
+    rules:
+      # 1) SSH must be reachable only from the LAN / office VPN.
+      # Any ESTABLISHED connection on port 22 from a remote outside the
+      # allowed list is a violation.
+      - name: "SSH from allowed networks"
+        proto: tcp
+        port: 22
+        state: ESTABLISHED
+        allowed_remote:
+          - 192.168.0.0/16
+          - 10.0.0.0/8
+          - 172.16.0.0/12
+          - 127.0.0.0/8
 
+      # 2) PostgreSQL must accept connections only from the LAN.
+      - name: "PostgreSQL from LAN only"
+        proto: tcp
+        port: 5432
+        state: ESTABLISHED
+        allowed_remote:
+          - 10.0.0.0/8
+          - 127.0.0.1
+
+      # 3) Interpreters must not open external connections.
+      # Any ESTABLISHED connection owned by python/python3/php/... to a remote
+      # outside the allowed list is a violation.
+      #
+      # IMPORTANT: "processes" uses EXACT basename match, not substring.
+      #   - "/usr/bin/python3"  matches only "python3", not "python"
+      #   - "/usr/bin/python3.12" has basename "python3.12" — add it explicitly
+      # Always check the real basename with:
+      #   readlink /proc/<pid>/exe
+      - name: "Interpreters must not connect externally"
+        proto: tcp
+        state: ESTABLISHED
+        processes:
+          - python
+          - python3
+          - python3.11
+          - python3.12
+          - php
+          - tclsh
+          - perl
+          - ruby
+          - node
+          - nodejs
+        allowed_remote:
+          - 127.0.0.1
+          - 10.0.0.0/8
+
+      # 4) Shells must never have network connections.
+      # Any ESTABLISHED TCP connection owned by a shell is a violation,
+      # regardless of the remote address.
+      - name: "shell must not have network connections"
+        proto: tcp
+        state: ESTABLISHED
+        processes:
+          - bash
+          - zsh
+          - ksh
+          - sh
+          - dash
+          - fish
+        alert_on_match: true
+
+      # 5) (Optional) Deny outbound DNS-over-TCP from anything except the
+      #     system resolver. Useful on locked-down servers.
+      # - name: "DNS TCP only from resolver"
+      #   proto: tcp
+      #   port: 53
+      #   state: ESTABLISHED
+      #   allowed_remote:
+      #     - 127.0.0.1
+      #     - 10.0.0.53
+  # --- files -----------------------------------------------------------------
   # File system monitoring: file creation, modification, deletion.
   files:
     enable: true
@@ -55,7 +148,9 @@ checks:
     # events and exclusions.
     paths:
       - path: /etc
-        # If a "hash: blake3" is specified, the check sums are calculated.
+        # If "hash: blake3" is specified, checksums are calculated for every
+        # regular file. This detects content changes even when mtime is restored.
+        # If omitted or empty — no hashing (faster, but weaker).
         hash: blake3
         # Which events to watch for this root:
         #   create — new files/directories appear
@@ -63,6 +158,7 @@ checks:
         #   delete — files/directories are removed
         # If watch is omitted or empty, all events are tracked.
         watch: [create, modify, delete]
+
       - path: /dev
         watch: [create, modify, delete]
         # Subpaths to skip together with their entire contents.
@@ -73,16 +169,48 @@ checks:
         exclude:
           - /dev/pts
           - /dev/tty
+        - path: /etc
+          watch: [create, modify, delete]
+          hash: blake3
+        - path: /dev
+          watch: [create, delete]
+          exclude:
+            - /dev/pts
+            - /dev/tty
+        # users crontab
+        - path: /var/spool/cron
+          watch: [create, modify, delete]
+          hash: blake3
+        # Other directories
+        - path: /usr/local
+          watch: [create, modify, delete]
+          hash: blake3
+        - path: /usr/bin
+          watch: [create, modify, delete]
+        - path: /usr/sbin
+          watch: [create, modify, delete]
+        - path: /root
+          watch: [create, modify, delete]
+          exclude:
+            - /root/.cache
+            - /root/.bash_history
+        - path: /home
+          watch: [create, modify, delete]
+          # hash: blake3
+          exclude:
+            - /home/*/.cache
+            - /home/*/.local/share/Trash
 
-  # Network connection checks (interface state, listeners, etc.).
-  network:
-    enable: false
-
+  # --- ports -----------------------------------------------------------------
   # Open port checks: what is listening and on which interfaces.
   ports:
     enable: false
+    # If true, ESTABLISHED TCP connections are included (very noisy).
+    # Leave false unless you really need it.
+    established: false
 
-  # Running process monitoring (PID, PPID, name, owner).
+  # --- processes -------------------------------------------------------------
+  # Running process monitoring (PID, PPID, name, owner, executable path).
   processes:
     enable: false
 
@@ -92,9 +220,10 @@ checks:
     exclude:
       - kworker
 
+  # --- services --------------------------------------------------------------
   # systemd service monitoring via D-Bus (LoadState, ActiveState, SubState, MainPID).
   services:
-    enable: true
+    enable: false
 
     # List of units to monitor.
     # If the list is empty (or commented out), ALL .service units are collected.
@@ -105,10 +234,12 @@ checks:
     #   - nginx.service
     #   - postgresql.service
 
+  # --- users -----------------------------------------------------------------
   # User monitoring: UID, home directory, groups, SSH keys.
   users:
     enable: false
 
+  # --- web -------------------------------------------------------------------
   # URL availability checks (HTTP GET, expecting 2xx).
   web:
     enable: false
@@ -118,11 +249,14 @@ checks:
       - https://server.com
       - https://git.server.com
 
+
 # -----------------------------------------------------------------------------
-# Send alerts when changes are detected.
-# If all three are disabled, reports are only written to the log and not delivered anywhere.
+# notify — send alerts when changes are detected.
+# If all three are disabled, reports are only written to the log.
 # -----------------------------------------------------------------------------
 notify:
+
+  # --- email -----------------------------------------------------------------
   # Send reports by email via SMTP.
   # Both port 465 (implicit TLS) and 587 (STARTTLS) are supported.
   email:
@@ -133,15 +267,16 @@ notify:
     port: 465
     # SMTP login.
     user: user
-    # Password. Quote it.
+    # Password. Quote it — YAML may parse a numeric password as int.
     password: "12345678"
     # Recipient.
     mail_to: to@domain.com
-    # Sender.
+    # Sender. Usually the same as user.
     mail_from: from@domain.com
     # Email subject. The %HOSTNAME% macro is replaced with the FQDN.
     mail_subject: "Alert message from %HOSTNAME%"
 
+  # --- matrix ----------------------------------------------------------------
   # Send reports to a Matrix room.
   matrix:
     enable: false
@@ -156,6 +291,7 @@ notify:
     # Room ID. Starts with "!" for rooms.
     room_id: "!1qu2ueu4383jr4o83"
 
+  # --- webhook ---------------------------------------------------------------
   # Send reports via a POST request to an arbitrary URL.
   webhook:
     enable: false
@@ -196,18 +332,14 @@ type DaemonConfig struct {
 // }
 
 type ChecksConfig struct {
-    Cron      CronCheck    `yaml:"cron"`
-    Processes ProcessCheck `yaml:"processes"`
-    Users     UsersCheck   `yaml:"users"`
-    Network   NetworkCheck `yaml:"network"`
-    Ports     PortsCheck   `yaml:"ports"`
-    Web       WebCheck     `yaml:"web"`
-    Files     FilesCheck   `yaml:"files"`
-    Services  ServicesCheck `yaml:"services"`
-}
-
-type CronCheck struct {
-	Enable bool `yaml:"enable"`
+    Processes     ProcessCheck      `yaml:"processes"`
+    Users         UsersCheck        `yaml:"users"`
+    Network       NetworkCheck      `yaml:"network"`
+    Ports         PortsCheck        `yaml:"ports"`
+    Web           WebCheck          `yaml:"web"`
+    Files         FilesCheck        `yaml:"files"`
+    Services      ServicesCheck     `yaml:"services"`
+    Connections   ConnectionsCheck  `yaml:"connections"`
 }
 
 type ProcessCheck struct {
@@ -219,12 +351,30 @@ type UsersCheck struct {
 	Enable bool `yaml:"enable"`
 }
 
+// убрать
 type NetworkCheck struct {
 	Enable bool `yaml:"enable"`
 }
 
+type ConnectionsCheck struct {
+    Enable bool       `yaml:"enable"`
+    Rules  []ConnRule `yaml:"rules"`
+}
+
+type ConnRule struct {
+    Name          string   `yaml:"name"`
+    Proto         string   `yaml:"proto"`
+    Port          uint32   `yaml:"port"`
+    // Process       string   `yaml:"process"`    // оставлено для обратной совместимости
+    Processes     []string `yaml:"processes"`  // новое поле
+    State         string   `yaml:"state"`
+    AllowedRemote []string `yaml:"allowed_remote"`
+    AlertOnMatch  bool     `yaml:"alert_on_match"`
+}
+
 type PortsCheck struct {
-	Enable bool `yaml:"enable"`
+	Enable      bool `yaml:"enable"`
+	Established bool `yaml:"established"`
 }
 
 type WebCheck struct {

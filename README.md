@@ -6,6 +6,8 @@ YASMU - is a lightweight integrity and availability monitoring tool for Linux sy
 * Users — UID, home directory, groups, SSH keys.
 * Processes — PID, PPID, owner, executable path and more.
 * Services — systemd units via D-Bus.
+* Ports - Listening ports (sockets) monitoring module.
+* Network connections - Network connections monitoring module (rule-based)
 * Web endpoints — HTTP status and response codes.
 
 ## Notifaction
