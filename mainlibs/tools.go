@@ -14,6 +14,7 @@ package mainlibs
 
 import (
     "strings"
+    "os"
 )
 
 // EscapeJSONBody escapes characters that break JSON if they end up
@@ -42,4 +43,12 @@ func EscapeJSONString(s string) string {
 		}
 	}
 	return b.String()
+}
+
+func IsFile(path string) bool {
+    info, err := os.Stat(path)
+    if err != nil {
+        return false
+    }
+    return !info.IsDir()
 }

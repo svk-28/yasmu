@@ -22,6 +22,8 @@ import (
     "syscall"
     "time"
     "strconv"
+    "path/filepath"
+    "encoding/gob"
 
     "watchdog/checklibs"
     "watchdog/mainlibs"
@@ -189,6 +191,8 @@ func RunService(ctx context.Context, cfg *Config) {
 		timeout = 30 * time.Second
 	}
 
+    LoadState(cfg)
+
 	for {
 		runChecks(cfg)
 
@@ -198,34 +202,39 @@ func RunService(ctx context.Context, cfg *Config) {
 		case <-time.After(timeout):
 		}
 	}
+    SaveState(cfg)
 }
 
 func DaemonRun(cfg *Config) {
-	cntxt := &daemon.Context{
-		PidFileName: cfg.Daemon.PidFile,
-		PidFilePerm: 0600,
-		LogFileName: cfg.Daemon.LogFile,
-		LogFilePerm: 0600,
-		WorkDir:     cfg.Daemon.WorkDir,
-		Umask:       027,
-	}
+        cntxt := &daemon.Context{
+        PidFileName: cfg.Daemon.PidFile,
+        PidFilePerm: 0600,
+        LogFileName: cfg.Daemon.LogFile,
+        LogFilePerm: 0600,
+        WorkDir:     cfg.Daemon.WorkDir,
+        Umask:       027,
+    }
 
-	d, err := cntxt.Reborn()
-	if err != nil {
-		log.Fatal("Failed to create a demon: ", err)
-	}
-	if d != nil {
-		return
-	}
-	defer cntxt.Release()
+    d, err := cntxt.Reborn()
+    if err != nil {
+        log.Fatal("Failed to create a demon: ", err)
+    }
+    if d != nil {
+        return
+    }
+    defer cntxt.Release()
 
-	ctx, stop := signal.NotifyContext(context.Background(),
-		syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
+    ctx, stop := signal.NotifyContext(context.Background(),
+        syscall.SIGINT, syscall.SIGTERM)
+    defer stop()
 
-	log.Println("Daemon started")
-	RunService(ctx, cfg)
-	log.Println("Daemon stopped")
+    log.Println("Daemon started")
+
+    LoadState(cfg)
+    RunService(ctx, cfg)
+    SaveState(cfg)
+
+    log.Println("Daemon stopped")
 }
 
 func DaemonStop(pidFile string) error {
@@ -341,6 +350,70 @@ func SendNotifycation(cfg *Config, msg string) {
         }
     }
 }
+
+
+func SaveStateToFile(path string, mapState any) error {
+    f, err := os.Create(path)
+    if err != nil {
+        return err
+    }
+    defer f.Close()
+    log.Println("Saving current check state", path)
+
+    return gob.NewEncoder(f).Encode(mapState)
+}
+
+func LoadStateFromFile(path string, mapState any) error {
+    f, err := os.Open(path)
+    if err != nil {
+        return err
+    }
+    defer f.Close()
+    log.Println("Loading previous check state", path)
+    return gob.NewDecoder(f).Decode(mapState)
+}
+
+// Saving the state of checks when exiting the program
+func SaveState(cfg *Config) {
+    save := func(name string, src any) {
+        path := filepath.Join(cfg.Daemon.WorkDir, name)
+        if err := SaveStateToFile(path, src); err != nil {
+            log.Printf("warn: cannot save state to %s: %v", path, err)
+        }
+    }
+
+    save("previousFileList", previousFileList)
+    save("previousUrlList", previousUrlList)
+    save("previousUsersList", previousUsersList)
+    save("previousServiceList", previousServiceList)
+    save("previousProcessList", previousProcessList)
+    save("previousPortList", previousPortList)
+}
+
+// LoadState loads the state of previous checks from files.
+func LoadState(cfg *Config) {
+    load := func(name string, dst any) {
+        path := filepath.Join(cfg.Daemon.WorkDir, name)
+        if !mainlibs.IsFile(path) {
+            return
+        }
+        if err := LoadStateFromFile(path, dst); err != nil {
+            log.Printf("warn: cannot load state from %s: %v", path, err)
+        } else {
+            if err = os.Remove(filepath.Join(cfg.Daemon.WorkDir, name)); err != nil {
+                log.Printf("Delete file %s error %v:", path, err)
+            }
+        }
+    }
+
+    load("previousFileList", &previousFileList)
+    load("previousUrlList", &previousUrlList)
+    load("previousUsersList", &previousUsersList)
+    load("previousServiceList", &previousServiceList)
+    load("previousProcessList", &previousProcessList)
+    load("previousPortList", &previousPortList)
+}
+
 
 func main() {
 	flag.BoolVar(&RunAsDaemon, "daemon", false, "Run the programm as a daemon")
