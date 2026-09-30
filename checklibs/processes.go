@@ -293,7 +293,7 @@ func GetProcessesList(exclude []string) (ProcessList, []error) {
 }
 
 func ProcessesCheck(exclude []string, previousProcessList ProcessList) (ProcessList, string) {
-    log.Println("\nRunning checklibs/ProcessesCheck")
+    log.Println("Running checklibs/ProcessesCheck")
 
     currentProcessList, errs := GetProcessesList(exclude)
     for _, e := range errs {

@@ -193,7 +193,7 @@ func checkURL(url string, client *http.Client) (UrlCheckInfo, error) {
 }
 
 func WebCheck(urls []string, previousUrlList UrlList) (UrlList, string) {
-    log.Println("\nRunning checklibs/WebCheck")
+    log.Println("Running checklibs/WebCheck")
 
     currentUrlList := make(UrlList)
     var errs []string
@@ -227,4 +227,3 @@ func WebCheck(urls []string, previousUrlList UrlList) (UrlList, string) {
 
     return cloneUrlList(currentUrlList), out
 }
-

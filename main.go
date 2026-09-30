@@ -120,7 +120,13 @@ func runChecks(cfg *Config) {
 
     // *********** Network Ports Checks ***************
     if cfg.Checks.Ports.Enable {
-        previousPortList, resultOfPortsCheck = checklibs.PortsCheck(previousPortList)
+        opts := checklibs.PortsOptions{
+            ExcludePorts:     cfg.Checks.Ports.ExcludePorts,
+            ExcludeProcesses: cfg.Checks.Ports.ExcludeProcesses,
+            IgnorePIDChanges: cfg.Checks.Ports.IgnorePIDChanges,
+        }
+    
+        previousPortList, resultOfPortsCheck = checklibs.PortsCheck(opts, previousPortList)
         if resultOfPortsCheck != "" {
             log.Println("Changes in ports have been recorded:")
             log.Println(resultOfPortsCheck)

@@ -299,7 +299,7 @@ func GetConnectionsList() (ConnList, []error) {
 
 
 func ConnectionsCheck(rules []ConnRule) string {
-    log.Println("\nRunning checklibs/ConnectionsCheck")
+    log.Println("Running checklibs/ConnectionsCheck")
 
     if len(rules) == 0 {
         log.Println("No connection rules configured, skipping")

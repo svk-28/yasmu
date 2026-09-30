@@ -205,10 +205,19 @@ checks:
 
   # Open port checks: what is listening and on which interfaces.
   ports:
-    enable: false
-    # If true, ESTABLISHED TCP connections are included (very noisy).
-    # Leave false unless you really need it.
+    enable: true
     established: false
+  # Ports filter
+    exclude_ports:
+        - 587
+        - 10024
+        - 10026
+        - 10032
+    # Proccesses filter
+    exclude_processes:
+        - /opt/zimbra
+    # Do not consider a change in PID/Exe to be a change in the socket.
+    ignore_pid_changes: false
 
   # Running process monitoring (PID, PPID, name, owner, executable path).
   processes:
@@ -359,10 +368,22 @@ type ConnRule struct {
 }
 
 type PortsCheck struct {
-	Enable      bool `yaml:"enable"`
-	Established bool `yaml:"established"`
-}
+    Enable           bool     `yaml:"enable"`
+    Established      bool     `yaml:"established"`
 
+    // Фильтр 1: исключить порты по номеру.
+    // Работает всегда, независимо от прав.
+    ExcludePorts     []uint32 `yaml:"exclude_ports"`
+
+    // Фильтр 2: исключить сокеты по процессу-владельцу.
+    // Сравнение по подстроке в Exe (регистронезависимо).
+    // Требует, чтобы Exe был виден (нужен root для чужих процессов).
+    ExcludeProcesses []string `yaml:"exclude_processes"`
+
+    // Фильтр 3: не считать изменение PID/Exe изменением сокета.
+    // Полезно, когда процессы перезапускаются, но порт остаётся.
+    IgnorePIDChanges  bool    `yaml:"ignore_pid_changes"`
+}
 type WebCheck struct {
 	Enable bool `yaml:"enable"`
 	URLs      []string `yaml:"urls"`

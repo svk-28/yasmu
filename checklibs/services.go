@@ -211,7 +211,7 @@ func cloneServiceList(src ServiceList) ServiceList {
 }
 
 func ServicesCheck(units []string, previousServiceList ServiceList) (ServiceList, string) {
-    log.Println("\nRunning checklibs/ServicesCheck")
+    log.Println("Running checklibs/ServicesCheck")
 
     currentServiceList, errs := GetServicesList(units)
     for _, e := range errs {

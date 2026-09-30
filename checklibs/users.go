@@ -203,58 +203,6 @@ func cloneUserList(src UserList) UserList {
     return dst
 }
 
-func UsersCheck(previousUsersList UserList) (UserList, string) {
-    log.Println("\nRunning checklibs/UsersCheck\n")
-
-    currentUsersList := make(UserList)
-
-    file, err := os.Open("/etc/passwd")
-    if err != nil {
-        log.Printf("Reading error /etc/passwd: %v\n", err)
-        return currentUsersList, ""
-    }
-    defer file.Close()
-
-    scanner := bufio.NewScanner(file)
-    count := 0
-
-    for scanner.Scan() {
-        line := scanner.Text()
-        if strings.HasPrefix(line, "#") {
-            continue
-        }
-        parts := strings.Split(line, ":")
-        if len(parts) < 7 {
-            continue
-        }
-
-        userName := parts[0]
-
-        meta, err := GetUserInfo(userName)
-        if err != nil {
-            fmt.Printf("\t\t%v\n", err)
-            continue
-        }
-        currentUsersList[userName] = meta
-        count++
-    }
-
-    if err := scanner.Err(); err != nil {
-        log.Printf("Scanner error: %v\n", err)
-    }
-
-    log.Printf("\tTotal found: %d users\n", count)
-
-    if previousUsersList == nil {
-        return maps.Clone(currentUsersList), ""
-    }
-
-    diff := CompareUserLists(previousUsersList, currentUsersList)
-    out := PrintUsersDiff(diff, false)
-
-    return cloneUserList(currentUsersList), out
-}
-
 func GetUserInfo(userName string) (UserMeta, error) {
     var meta UserMeta
 
@@ -371,3 +319,56 @@ func sshKeysToString(keys []SSHKey) string {
     sort.Strings(parts)
     return strings.Join(parts, "; ")
 }
+
+func UsersCheck(previousUsersList UserList) (UserList, string) {
+    log.Println("Running checklibs/UsersCheck\n")
+
+    currentUsersList := make(UserList)
+
+    file, err := os.Open("/etc/passwd")
+    if err != nil {
+        log.Printf("Reading error /etc/passwd: %v\n", err)
+        return currentUsersList, ""
+    }
+    defer file.Close()
+
+    scanner := bufio.NewScanner(file)
+    count := 0
+
+    for scanner.Scan() {
+        line := scanner.Text()
+        if strings.HasPrefix(line, "#") {
+            continue
+        }
+        parts := strings.Split(line, ":")
+        if len(parts) < 7 {
+            continue
+        }
+
+        userName := parts[0]
+
+        meta, err := GetUserInfo(userName)
+        if err != nil {
+            fmt.Printf("\t\t%v\n", err)
+            continue
+        }
+        currentUsersList[userName] = meta
+        count++
+    }
+
+    if err := scanner.Err(); err != nil {
+        log.Printf("Scanner error: %v\n", err)
+    }
+
+    log.Printf("\tTotal found: %d users\n", count)
+
+    if previousUsersList == nil {
+        return maps.Clone(currentUsersList), ""
+    }
+
+    diff := CompareUserLists(previousUsersList, currentUsersList)
+    out := PrintUsersDiff(diff, false)
+
+    return cloneUserList(currentUsersList), out
+}
+

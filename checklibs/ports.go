@@ -24,58 +24,64 @@ import (
     gopsproc "github.com/shirou/gopsutil/v4/process"
 )
 
-// PortMeta — метаданные одного сокета.
 type PortMeta struct {
     Proto      string // "tcp" / "udp"
-    LocalIP    string // локальный IP (0.0.0.0, ::, 127.0.0.1, ...)
-    LocalPort  uint32 // локальный порт
-    RemoteIP   string // удалённый IP (для TCP с установленным соединением)
-    RemotePort uint32 // удалённый порт
-    State      string // "LISTEN", "ESTABLISHED", ... (для UDP — пусто)
-    PID        int32  // PID процесса-владельца
-    Exe        string // путь к бинарнику процесса-владельца
+    LocalIP    string
+    LocalPort  uint32
+    RemoteIP   string
+    RemotePort uint32
+    State      string
+    PID        int32
+    Exe        string
 }
 
-// PortList — карта: ключ сокета → метаданные.
 type PortList map[string]PortMeta
 
-// -----------------------------------------------------------------------------
-// Diff-типы
-// -----------------------------------------------------------------------------
+type PortsOptions struct {
+    ExcludePorts     []uint32
+    ExcludeProcesses []string
+    IgnorePIDChanges bool
+}
 
-// PortDiff — изменения одного сокета.
 type PortDiff struct {
     Key     string
     Changes []FieldChange
 }
 
-// PortDiffResult — результат сравнения двух снимков PortList.
 type PortDiffResult struct {
-    OnlyInBase   []string   // сокет закрылся
-    OnlyInActual []string   // сокет открылся
-    Changed      []PortDiff // изменилось состояние/владелец
+    OnlyInBase   []string
+    OnlyInActual []string
+    Changed      []PortDiff
     Unchanged    []string
 }
 
-// -----------------------------------------------------------------------------
-// Ключ сокета
-// -----------------------------------------------------------------------------
-
-// portKey формирует стабильный ключ для сокета.
+// portKey формирует ключ для сокета.
 // Включает PID, чтобы различать сокеты на одном порту от разных процессов
-// (SO_REUSEPORT, несколько bind'ов на 0.0.0.0 и 127.0.0.1 и т.п.).
+// (SO_REUSEPORT). При IgnorePIDChanges логика сравнения отдельная —
+// см. ComparePortLists.
 func portKey(m PortMeta) string {
     return fmt.Sprintf("%s:%s:%d:%s:%d:%d",
         m.Proto, m.LocalIP, m.LocalPort, m.RemoteIP, m.RemotePort, m.PID)
 }
 
-// -----------------------------------------------------------------------------
-// Сравнение
-// -----------------------------------------------------------------------------
+// portKeyNoPID — ключ без PID. Используется, когда IgnorePIDChanges = true,
+// чтобы перезапуски процессов не выглядели как «закрытие/открытие» сокета.
+func portKeyNoPID(m PortMeta) string {
+    return fmt.Sprintf("%s:%s:%d:%s:%d",
+        m.Proto, m.LocalIP, m.LocalPort, m.RemoteIP, m.RemotePort)
+}
 
-// ComparePortLists сравнивает два снимка PortList.
-func ComparePortLists(base, actual PortList) PortDiffResult {
+// Если opts.IgnorePIDChanges = true:
+//   - ключ не содержит PID → перезапуск процесса не считается изменением;
+//   - поля PID и Exe не сравниваются.
+func ComparePortLists(base, actual PortList, opts PortsOptions) PortDiffResult {
     var res PortDiffResult
+
+    if opts.IgnorePIDChanges {
+        // Пересобираем карты с ключом без PID.
+        base = rekeyWithoutPID(base)
+        actual = rekeyWithoutPID(actual)
+    }
 
     for key, b := range base {
         a, ok := actual[key]
@@ -89,15 +95,18 @@ func ComparePortLists(base, actual PortList) PortDiffResult {
         if b.State != a.State {
             changes = append(changes, FieldChange{"state", b.State, a.State})
         }
-        if b.PID != a.PID {
-            changes = append(changes, FieldChange{
-                "pid",
-                fmt.Sprint(b.PID),
-                fmt.Sprint(a.PID),
-            })
-        }
-        if b.Exe != a.Exe {
-            changes = append(changes, FieldChange{"exe", b.Exe, a.Exe})
+
+        if !opts.IgnorePIDChanges {
+            if b.PID != a.PID {
+                changes = append(changes, FieldChange{
+                    "pid",
+                    fmt.Sprint(b.PID),
+                    fmt.Sprint(a.PID),
+                })
+            }
+            if b.Exe != a.Exe {
+                changes = append(changes, FieldChange{"exe", b.Exe, a.Exe})
+            }
         }
 
         if len(changes) > 0 {
@@ -116,12 +125,17 @@ func ComparePortLists(base, actual PortList) PortDiffResult {
     return res
 }
 
-// -----------------------------------------------------------------------------
-// Вывод
-// -----------------------------------------------------------------------------
+// rekeyWithoutPID пересобирает карту, используя ключ без PID.
+// Если два сокета совпадают по всему, кроме PID (SO_REUSEPORT),
+// они схлопнутся — оставляем первый.
+func rekeyWithoutPID(src PortList) PortList {
+    dst := make(PortList, len(src))
+    for _, m := range src {
+        dst[portKeyNoPID(m)] = m
+    }
+    return dst
+}
 
-// PrintPortsDiff формирует текстовый отчёт об изменениях в сокетах.
-// Возвращает пустую строку, если изменений нет.
 func PrintPortsDiff(d PortDiffResult, base, actual PortList, showUnchanged bool) string {
     var sb strings.Builder
 
@@ -177,12 +191,10 @@ func PrintPortsDiff(d PortDiffResult, base, actual PortList, showUnchanged bool)
     return ""
 }
 
-// formatPortMeta — человекочитаемое представление сокета для отчёта.
 func formatPortMeta(m PortMeta) string {
     var sb strings.Builder
 
     fmt.Fprintf(&sb, "%s %s:%d", m.Proto, m.LocalIP, m.LocalPort)
-
     if m.RemoteIP != "" && m.RemotePort > 0 {
         fmt.Fprintf(&sb, " -> %s:%d", m.RemoteIP, m.RemotePort)
     }
@@ -194,58 +206,72 @@ func formatPortMeta(m PortMeta) string {
     } else if m.PID > 0 {
         fmt.Fprintf(&sb, " [pid=%d]", m.PID)
     }
-
     return sb.String()
 }
 
-// -----------------------------------------------------------------------------
-// Основная логика — аналог FilesCheck / UsersCheck / ProcessesCheck / ServicesCheck / WebCheck
-// -----------------------------------------------------------------------------
-
-// PortsCheck собирает текущее состояние сокетов и сравнивает с предыдущим снимком.
-//
-// previousPortList == nil на первом проходе — тогда diff не формируется,
-// возвращается пустая строка отчёта.
-//
-// Возвращает новый снимок (для следующего вызова) и текст отчёта.
-func PortsCheck(previousPortList PortList) (PortList, string) {
-    log.Println("\nRunning checklibs/PortsCheck")
-
-    currentPortList, errs := GetPortsList()
-    for _, e := range errs {
-        log.Printf("warn: %v", e)
+func isUDPListener(c gopsnet.ConnectionStat) bool {
+    if c.Pid <= 0 {
+        return false
     }
-
-    if currentPortList == nil {
-        return previousPortList, ""
+    if c.Raddr.IP != "" && c.Raddr.Port > 0 {
+        return false
     }
-
-    // Первый проход — только эталон.
-    if previousPortList == nil {
-        log.Printf("Baseline collected: %d sockets", len(currentPortList))
-        return clonePortList(currentPortList), ""
+    if c.Laddr.Port >= 32768 {
+        return false
     }
-
-    diff := ComparePortLists(previousPortList, currentPortList)
-    out := PrintPortsDiff(diff, previousPortList, currentPortList, false)
-
-    return clonePortList(currentPortList), out
+    return true
 }
 
-// GetPortsList собирает TCP-листенеры и UDP-сокеты через gopsutil/net.
-//
-// TCP: только LISTEN.
-// UDP: только "bind'нутые" сокеты — с известным PID и на порт >= 1024,
-// исключая эфемерные клиентские сокеты, которые постоянно меняются.
-//
-// Ошибки на отдельных протоколах не прерывают сбор — они собираются в errs.
-func GetPortsList() (PortList, []error) {
+func connToMeta(proto string, c gopsnet.ConnectionStat) PortMeta {
+    meta := PortMeta{
+        Proto:      proto,
+        LocalIP:    c.Laddr.IP,
+        LocalPort:  c.Laddr.Port,
+        RemoteIP:   c.Raddr.IP,
+        RemotePort: c.Raddr.Port,
+        PID:        c.Pid,
+    }
+    if meta.LocalIP == "" {
+        meta.LocalIP = "0.0.0.0"
+    }
+    meta.State = c.Status
+    if meta.State == "NONE" {
+        meta.State = ""
+    }
+    return meta
+}
+
+func clonePortList(src PortList) PortList {
+    dst := make(PortList, len(src))
+    for k, v := range src {
+        dst[k] = v
+    }
+    return dst
+}
+
+func isExcludedProc(exe string, opts PortsOptions) bool {
+    if len(opts.ExcludeProcesses) == 0 {
+        return false
+    }
+    lower := strings.ToLower(exe)
+    for _, ex := range opts.ExcludeProcesses {
+        ex = strings.TrimSpace(ex)
+        if ex == "" {
+            continue
+        }
+        if strings.Contains(lower, strings.ToLower(ex)) {
+            return true
+        }
+    }
+    return false
+}
+
+
+func GetPortsList(opts PortsOptions) (PortList, []error) {
     result := make(PortList)
     var errs []error
 
-    // Кэш PID → Exe, чтобы не дёргать /proc на каждый сокет.
     exeCache := make(map[int32]string)
-
     resolveExe := func(pid int32) string {
         if pid <= 0 {
             return ""
@@ -263,7 +289,12 @@ func GetPortsList() (PortList, []error) {
         return exe
     }
 
-    // 1. TCP — только LISTEN.
+    skipPort := make(map[uint32]bool, len(opts.ExcludePorts))
+    for _, p := range opts.ExcludePorts {
+        skipPort[p] = true
+    }
+
+    // TCP — LISTEN only.
     tcpConns, err := gopsnet.Connections("tcp")
     if err != nil {
         errs = append(errs, fmt.Errorf("tcp: %w", err))
@@ -272,13 +303,19 @@ func GetPortsList() (PortList, []error) {
             if c.Status != "LISTEN" {
                 continue
             }
+            if skipPort[c.Laddr.Port] {
+                continue
+            }
             meta := connToMeta("tcp", c)
             meta.Exe = resolveExe(meta.PID)
+            if isExcludedProc(meta.Exe, opts) {
+                continue
+            }
             result[portKey(meta)] = meta
         }
     }
 
-    // 2. UDP — только "bind'нутые" сокеты.
+    // UDP — bind only.
     udpConns, err := gopsnet.Connections("udp")
     if err != nil {
         errs = append(errs, fmt.Errorf("udp: %w", err))
@@ -287,8 +324,14 @@ func GetPortsList() (PortList, []error) {
             if !isUDPListener(c) {
                 continue
             }
+            if skipPort[c.Laddr.Port] {
+                continue
+            }
             meta := connToMeta("udp", c)
             meta.Exe = resolveExe(meta.PID)
+            if isExcludedProc(meta.Exe, opts) {
+                continue
+            }
             result[portKey(meta)] = meta
         }
     }
@@ -296,67 +339,26 @@ func GetPortsList() (PortList, []error) {
     return result, errs
 }
 
-// isUDPListener решает, считать ли UDP-сокет «слушающим».
-//
-// UDP не имеет состояния LISTEN, поэтому используем эвристику:
-//   - у сокета известен PID (значит, процесс жив и владеет сокетом);
-//   - локальный порт в «привилегированном» или серверном диапазоне (>= 1024);
-//   - удалённый адрес пуст (сокет не подключён к пиру).
-//
-// Это отсекает эфемерные клиентские UDP-сокеты, которые создаются
-// на каждый DNS/NTP/QUIC-запрос и сразу закрываются.
-func isUDPListener(c gopsnet.ConnectionStat) bool {
-    // Нет PID — не можем подтвердить, что это серверный сокет.
-    if c.Pid <= 0 {
-        return false
+func PortsCheck(opts PortsOptions, previousPortList PortList) (PortList, string) {
+    log.Println("Running checklibs/PortsCheck")
+
+    currentPortList, errs := GetPortsList(opts)
+    for _, e := range errs {
+        log.Printf("warn: %v", e)
     }
 
-    // У «подключённого» UDP-сокета есть удалённый адрес — это клиент.
-    if c.Raddr.IP != "" && c.Raddr.Port > 0 {
-        return false
+    if currentPortList == nil {
+        return previousPortList, ""
     }
 
-    // Эфемерные порты (обычно 32768–60999) — клиентские.
-    // Серверные сокеты bind'ятся на фиксированные порты.
-    // Диапазон можно уточнить через /proc/sys/net/ipv4/ip_local_port_range,
-    // но для фильтрации достаточно отсечь всё, что >= 32768.
-    if c.Laddr.Port >= 32768 {
-        return false
+    if previousPortList == nil {
+        log.Printf("Baseline collected: %d sockets", len(currentPortList))
+        return clonePortList(currentPortList), ""
     }
 
-    return true
+    diff := ComparePortLists(previousPortList, currentPortList, opts)
+    out := PrintPortsDiff(diff, previousPortList, currentPortList, false)
+
+    return clonePortList(currentPortList), out
 }
 
-// connToMeta превращает запись gopsutil/net в PortMeta.
-func connToMeta(proto string, c gopsnet.ConnectionStat) PortMeta {
-    meta := PortMeta{
-        Proto:      proto,
-        LocalIP:    c.Laddr.IP,
-        LocalPort:  c.Laddr.Port,
-        RemoteIP:   c.Raddr.IP,
-        RemotePort: c.Raddr.Port,
-        PID:        c.Pid,
-    }
-
-    if meta.LocalIP == "" {
-        meta.LocalIP = "0.0.0.0"
-    }
-
-    // Состояние (для TCP). Для UDP gopsutil возвращает "NONE".
-    meta.State = c.Status
-    if meta.State == "NONE" {
-        meta.State = ""
-    }
-
-    return meta
-}
-
-// clonePortList — копия PortList.
-// PortMeta не содержит срезов и указателей, поэтому поверхностной копии достаточно.
-func clonePortList(src PortList) PortList {
-    dst := make(PortList, len(src))
-    for k, v := range src {
-        dst[k] = v
-    }
-    return dst
-}
