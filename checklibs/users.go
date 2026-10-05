@@ -246,7 +246,7 @@ func GetUserInfo(userName string) (UserMeta, error) {
 // Возвращает список ключей, флаг существования каталога .ssh и ошибку.
 // Отсутствие каталога или файла — не ошибка: возвращается пустой список.
 func ReadSSHKeys(homeDir string) ([]SSHKey, bool, error) {
-    if homeDir == "" {
+    if homeDir == "" || homeDir == "/dev/null"{
         return nil, false, nil
     }
 
@@ -371,4 +371,3 @@ func UsersCheck(previousUsersList UserList) (UserList, string) {
 
     return cloneUserList(currentUsersList), out
 }
-
