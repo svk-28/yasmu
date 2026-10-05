@@ -1,0 +1,11 @@
+Package: yasmu
+Version: @VERSION@
+Section: utils
+Priority: optional
+Architecture: amd64
+Maintainer: Sergey Kalinin <svk@nuk-svk.ru>
+Homepage: https://nuk-svk.ru
+Description: YASMU - Yet Another System Monitoring Utility
+ A lightweight utility for monitoring system integrity
+ (files, users, processes, services, ports) and website availability.
+ It sends alerts via email, Matrix, or webhook.

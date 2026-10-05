@@ -1,0 +1,12 @@
+[Unit]
+Description=YASMU - Yet Another System Monitoring Utility
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/yasmu -config /etc/yasmu/config.yaml -daemon-start
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
