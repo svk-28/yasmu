@@ -31,12 +31,12 @@ daemon:
   # Pause between check iterations, in seconds.
   check_timeout: 60
   # PID file for the daemon.
-  pid_file: yasmu.pid
+  pid_file: /var/run/yasmu.pid
   # Log file. Relative to work_dir unless absolute.
-  log_file: yasmu.log
+  log_file: /var/log/yasmu.log
   # Working directory of the daemon. After daemonization the process chdirs here.
   # Relative paths in the config are resolved against it.
-  work_dir: ./
+  work_dir: /var/lib/yasmu
 
 # checks — which checks to run on each iteration.
 # Every section has its own "enable" flag; when false the check is skipped.
@@ -165,37 +165,37 @@ checks:
         exclude:
           - /dev/pts
           - /dev/tty
-        - path: /etc
-          watch: [create, modify, delete]
-          hash: blake3
-        - path: /dev
-          watch: [create, delete]
-          exclude:
-            - /dev/pts
-            - /dev/tty
-        # users crontab
-        - path: /var/spool/cron
-          watch: [create, modify, delete]
-          hash: blake3
-        # Other directories
-        - path: /usr/local
-          watch: [create, modify, delete]
-          hash: blake3
-        - path: /usr/bin
-          watch: [create, modify, delete]
-        - path: /usr/sbin
-          watch: [create, modify, delete]
-        - path: /root
-          watch: [create, modify, delete]
-          exclude:
-            - /root/.cache
-            - /root/.bash_history
-        - path: /home
-          watch: [create, modify, delete]
-          # hash: blake3
-          exclude:
-            - /home/*/.cache
-            - /home/*/.local/share/Trash
+      - path: /etc
+        watch: [create, modify, delete]
+        hash: blake3
+      - path: /dev
+        watch: [create, delete]
+        exclude:
+          - /dev/pts
+          - /dev/tty
+      # users crontab
+      - path: /var/spool/cron
+        watch: [create, modify, delete]
+        hash: blake3
+      # Other directories
+      - path: /usr/local
+        watch: [create, modify, delete]
+        hash: blake3
+      - path: /usr/bin
+        watch: [create, modify, delete]
+      - path: /usr/sbin
+        watch: [create, modify, delete]
+      - path: /root
+        watch: [create, modify, delete]
+        exclude:
+          - /root/.cache
+          - /root/.bash_history
+      - path: /home
+        watch: [create, modify, delete]
+        # hash: blake3
+        exclude:
+          - /home/*/.cache
+          - /home/*/.local/share/Trash
        # - path: /lib/systemd/system
        #   watch: [create, modify, delete]
        #   hash: blake3
@@ -227,7 +227,7 @@ checks:
     # the process is not included in the snapshot. Case-insensitive.
     # Example: kworker/13:0-events, kworker/u64:3-... — all excluded.
     exclude:
-      - kworker
+     # - kworker
 
   # systemd service monitoring via D-Bus (LoadState, ActiveState, SubState, MainPID).
   services:
@@ -238,8 +238,10 @@ checks:
     # Short form without the suffix is allowed: "sshd" → "sshd.service".
     # units:
     #   - sshd.service
-    #   - nginx.service
-    #   - postgresql.service
+    # Services filter
+    # exclude:
+    #   - sshd
+    #   - apache2.service
 
   # User monitoring: UID, home directory, groups, SSH keys.
   users:
@@ -395,8 +397,9 @@ type FilesCheck struct {
 }
 
 type ServicesCheck struct {
-    Enable bool     `yaml:"enable"`
-    Units  []string `yaml:"units"`
+    Enable  bool     `yaml:"enable"`
+    Units   []string `yaml:"units"`
+    Exclude []string `yaml:"exclude"`
 }
 
 type PathWatch struct {

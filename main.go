@@ -173,7 +173,11 @@ func runChecks(cfg *Config) {
 
     // *********** System Services Checks ***************
     if cfg.Checks.Services.Enable {
-        previousServiceList, resultOfServicesCheck = checklibs.ServicesCheck(cfg.Checks.Services.Units, previousServiceList)
+        previousServiceList, resultOfServicesCheck = checklibs.ServicesCheck(
+            cfg.Checks.Services.Exclude,
+            cfg.Checks.Services.Units,
+            previousServiceList,
+        )
         if resultOfServicesCheck != "" {
             log.Println("Changes in services have been recorded:")
             log.Println(resultOfServicesCheck)
@@ -422,8 +426,8 @@ func LoadState(cfg *Config) {
 
 
 func main() {
-	flag.BoolVar(&RunAsDaemon, "daemon", false, "Run the programm as a daemon")
-	flag.BoolVar(&StopDaemon, "stop-daemon", false, "Stop the programm runing as a daemon")
+	flag.BoolVar(&RunAsDaemon, "daemon-start", false, "Run the programm as a daemon")
+	flag.BoolVar(&StopDaemon, "daemon-stop", false, "Stop the programm runing as a daemon")
 	flag.BoolVar(&RunOnce, "run-once", false, "Run the programm one time")
 	flag.StringVar(&ConfigFile, "config", "config.yaml", "Config file with full path")
 	flag.BoolVar(&MakeConfig, "make-config", false, "Generate config file")
@@ -447,6 +451,11 @@ func main() {
 	}
 
 	cfg, err := ConfigLoad(ConfigFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = os.MkdirAll(cfg.Daemon.WorkDir, 0700)
 	if err != nil {
 		log.Fatal(err)
 	}

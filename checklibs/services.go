@@ -141,7 +141,7 @@ func PrintServicesDiff(d ServiceDiffResult, showUnchanged bool) string {
     return ""
 }
 
-func GetServicesList(units []string) (ServiceList, []error) {
+func GetServicesList(exclude []string, units []string) (ServiceList, []error) {
     result := make(ServiceList)
     var errs []error
 
@@ -196,6 +196,10 @@ func GetServicesList(units []string) (ServiceList, []error) {
             }
         }
 
+        if isProcessExcluded(meta.Name, exclude) {
+            continue
+        }
+
         result[name] = meta
     }
 
@@ -210,10 +214,10 @@ func cloneServiceList(src ServiceList) ServiceList {
     return dst
 }
 
-func ServicesCheck(units []string, previousServiceList ServiceList) (ServiceList, string) {
+func ServicesCheck(exclude []string, units []string, previousServiceList ServiceList) (ServiceList, string) {
     log.Println("Running checklibs/ServicesCheck")
 
-    currentServiceList, errs := GetServicesList(units)
+    currentServiceList, errs := GetServicesList(exclude, units)
     for _, e := range errs {
         log.Printf("warn: %v", e)
     }
