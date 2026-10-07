@@ -2,7 +2,7 @@
 # =============================================================================
 # YASMU functional test — для УЖЕ ЗАПУЩЕННОГО демона
 #
-# Читает /etc/yasmu/config.yml, триггерит события в реальных путях,
+# Читает /etc/yasmu/config.yaml, триггерит события в реальных путях,
 # проверяет лог YASMU на срабатывание.
 #
 # ВАЖНО:
@@ -22,6 +22,8 @@ USE_JOURNAL=0
 CHECK_TIMEOUT=60
 WAIT_AFTER=""
 NC_LISTEN=""
+TEST_FILES_PATH=""
+TEST_SERVICE_NAME=""
 
 pass=0
 fail=0
@@ -33,7 +35,24 @@ log_warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
 log_step() { echo; echo -e "${BLUE}=== $* ===${NC}"; }
 
 # =============================================================================
-# NC
+# CLEANUP
+# =============================================================================
+
+cleanup() {
+    remove_test_service 2>/dev/null || true
+    userdel -r "yasmu-test-${TEST_ID}" 2>/dev/null || true
+    rm -f "/tmp/yasmu-test-bin-${TEST_ID}" 2>/dev/null || true
+    rm -f "${TEST_FILES_PATH}/yasmu-test-new-${TEST_ID}.txt" 2>/dev/null || true
+    rm -f "${TEST_FILES_PATH}/yasmu-test-mod-${TEST_ID}.txt" 2>/dev/null || true
+    rm -f "${TEST_FILES_PATH}/yasmu-test-del-${TEST_ID}.txt" 2>/dev/null || true
+    kill_port 34567 2>/dev/null || true
+    kill_port 34568 2>/dev/null || true
+    kill_port 34569 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
+# =============================================================================
+# NC / TCP HELPERS
 # =============================================================================
 
 detect_nc() {
@@ -117,7 +136,29 @@ read_log() {
     if [ "$USE_JOURNAL" -eq 1 ]; then
         journalctl -u yasmu --since "${since_sec} seconds ago" --no-pager 2>/dev/null
     else
-        tail -500 "$LOG_FILE" 2>/dev/null
+        tail -1000 "$LOG_FILE" 2>/dev/null
+    fi
+}
+
+# =============================================================================
+# ПРОВЕРКИ
+# =============================================================================
+
+# Проверяет, включена ли секция конфига (enable: true).
+# Ищет "  <section>:" на уровне 2 пробелов, потом первый enable: внутри.
+section_enabled() {
+    local section="$1"
+    awk -v sec="$section" '
+        $0 ~ "^  "sec":" { in_sec=1; next }
+        in_sec && /^  [a-z]/ { exit }
+        in_sec && /enable:[ \t]*true/ { print "yes"; exit }
+    ' "$CONFIG" | grep -q yes
+}
+
+assert_yasmu_alive() {
+    if ! pgrep -x yasmu >/dev/null 2>&1 && ! systemctl is-active --quiet yasmu 2>/dev/null; then
+        log_fail "YASMU умер во время теста"
+        exit 1
     fi
 }
 
@@ -135,13 +176,30 @@ assert_in_log() {
     fi
 }
 
+# Ждёт сработки с ретраями: не один sleep, а периодические проверки лога.
 wait_and_check() {
     local needle="$1"; local label="$2"
-    log_info "Ждём ${WAIT_AFTER}с (check_timeout=${CHECK_TIMEOUT}с)..."
-    sleep "$WAIT_AFTER"
+    local deadline=$(( $(date +%s) + WAIT_AFTER + CHECK_TIMEOUT ))
+    log_info "Ждём сработки (до $((WAIT_AFTER + CHECK_TIMEOUT))с)..."
+
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        assert_yasmu_alive
+        local out
+        out=$(read_log "$WAIT_AFTER")
+        if echo "$out" | grep -qF -- "$needle"; then
+            log_ok "$label"
+            pass=$((pass + 1))
+            return
+        fi
+        sleep 3
+    done
+
+    log_fail "$label"
     local out
     out=$(read_log "$WAIT_AFTER")
-    assert_in_log "$needle" "$label" "$out"
+    echo "       ожидалось: $needle"
+    echo "$out" | tail -25 | sed 's/^/         /'
+    fail=$((fail + 1))
 }
 
 # Извлекает первый files.path из конфига (устойчиво к отступам)
@@ -151,14 +209,16 @@ get_first_files_path() {
 }
 
 # =============================================================================
-# ТЕСТЫ
+# ТЕСТЫ: FILES
 # =============================================================================
-
-TEST_FILES_PATH=""
 
 test_files_create() {
     log_step "FilesCheck: создание файла"
 
+    if ! section_enabled "files"; then
+        log_warn "checks.files.enable != true — пропуск"
+        return
+    fi
     [ -z "$TEST_FILES_PATH" ] && { log_warn "files.paths пуст — пропуск"; return; }
 
     local f="${TEST_FILES_PATH}/yasmu-test-new-${TEST_ID}.txt"
@@ -174,6 +234,10 @@ test_files_create() {
 test_files_modify() {
     log_step "FilesCheck: изменение содержимого"
 
+    if ! section_enabled "files"; then
+        log_warn "checks.files.enable != true — пропуск"
+        return
+    fi
     [ -z "$TEST_FILES_PATH" ] && { log_warn "files.paths пуст — пропуск"; return; }
 
     local f="${TEST_FILES_PATH}/yasmu-test-mod-${TEST_ID}.txt"
@@ -190,6 +254,10 @@ test_files_modify() {
 test_files_delete() {
     log_step "FilesCheck: удаление файла"
 
+    if ! section_enabled "files"; then
+        log_warn "checks.files.enable != true — пропуск"
+        return
+    fi
     [ -z "$TEST_FILES_PATH" ] && { log_warn "files.paths пуст — пропуск"; return; }
 
     local f="${TEST_FILES_PATH}/yasmu-test-del-${TEST_ID}.txt"
@@ -203,10 +271,18 @@ test_files_delete() {
     wait_and_check "yasmu-test-del-${TEST_ID}.txt" "files: удаление зафиксировано"
 }
 
+# =============================================================================
+# ТЕСТЫ: PROCESSES
+# =============================================================================
+
 test_processes_new() {
     log_step "ProcessesCheck: появление процесса"
 
-    # Процесс с уникальным именем, чтобы не отфильтровался
+    if ! section_enabled "processes"; then
+        log_warn "checks.processes.enable != true — пропуск"
+        return
+    fi
+
     sleep 120 &
     local pid=$!
     log_info "Запущен sleep, PID=$pid"
@@ -216,11 +292,66 @@ test_processes_new() {
     kill "$pid" 2>/dev/null || true
 }
 
+test_processes_stop() {
+    log_step "ProcessesCheck: остановка процесса"
+
+    if ! section_enabled "processes"; then
+        log_warn "checks.processes.enable != true — пропуск"
+        return
+    fi
+
+    sleep 120 &
+    local pid=$!
+    log_info "Запущен sleep, PID=$pid, ждём фиксации"
+    sleep "$WAIT_AFTER"
+
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    log_info "Убит PID $pid"
+
+    wait_and_check "PID $pid" "processes: остановка зафиксирована"
+}
+
+test_processes_deleted_exe() {
+    log_step "ProcessesCheck: удалённый бинарник"
+
+    if ! section_enabled "processes"; then
+        log_warn "checks.processes.enable != true — пропуск"
+        return
+    fi
+
+    local tmp_bin="/tmp/yasmu-test-bin-${TEST_ID}"
+    cp /bin/sleep "$tmp_bin" 2>/dev/null || {
+        log_warn "Не могу скопировать /bin/sleep — пропуск"
+        return
+    }
+
+    "$tmp_bin" 120 &
+    local pid=$!
+    log_info "Запущен $tmp_bin (PID $pid), ждём фиксации"
+    sleep "$WAIT_AFTER"
+
+    rm -f "$tmp_bin"
+    log_info "Удалён бинарник $tmp_bin"
+
+    wait_and_check "deleted" "processes: удалённый бинарник зафиксирован"
+
+    kill "$pid" 2>/dev/null || true
+}
+
+# =============================================================================
+# ТЕСТЫ: PORTS
+# =============================================================================
+
 test_ports_new() {
     log_step "PortsCheck: открытие нового порта"
 
-    local port=34567
+    if ! section_enabled "ports"; then
+        log_warn "checks.ports.enable != true — пропуск"
+        return
+    fi
 
+    local port=34567
     kill_port "$port"
     sleep 1
 
@@ -247,8 +378,49 @@ test_ports_new() {
     kill_port "$port"
 }
 
+test_ports_close() {
+    log_step "PortsCheck: закрытие порта"
+
+    if ! section_enabled "ports"; then
+        log_warn "checks.ports.enable != true — пропуск"
+        return
+    fi
+
+    local port=34569
+    kill_port "$port"
+    sleep 1
+
+    local server_pid
+    server_pid=$(start_tcp_server "$port")
+    sleep 2
+
+    if ! port_is_listening "$port"; then
+        log_fail "Сервер не слушает $port"
+        kill "$server_pid" 2>/dev/null || true
+        fail=$((fail + 1)); return
+    fi
+
+    log_info "Сервер слушает $port, ждём фиксации"
+    sleep "$WAIT_AFTER"
+
+    kill "$server_pid" 2>/dev/null || true
+    kill_port "$port"
+    log_info "Сервер остановлен, порт $port закрыт"
+
+    wait_and_check "$port" "ports: закрытие зафиксировано"
+}
+
+# =============================================================================
+# ТЕСТЫ: CONNECTIONS
+# =============================================================================
+
 test_connections_bash() {
     log_step "ConnectionsCheck: bash с сетью"
+
+    if ! section_enabled "connections"; then
+        log_warn "checks.connections.enable != true — пропуск"
+        return
+    fi
 
     local port=34568
 
@@ -270,7 +442,6 @@ test_connections_bash() {
         fail=$((fail + 1)); return
     fi
 
-    # bash держит соединение через /dev/tcp
     bash -c "exec 3<>/dev/tcp/127.0.0.1/$port; read -u 3 -t 120 line" &
     local bashpid=$!
     sleep 2
@@ -289,8 +460,129 @@ test_connections_bash() {
     kill_port "$port"
 }
 
+# =============================================================================
+# ТЕСТЫ: SERVICES (systemd)
+# =============================================================================
+
+create_test_service() {
+    TEST_SERVICE_NAME="yasmu-test-${TEST_ID}.service"
+    local unit_path="/etc/systemd/system/${TEST_SERVICE_NAME}"
+
+    cat > "$unit_path" <<EOF
+[Unit]
+Description=YASMU test service (safe to remove)
+
+[Service]
+Type=simple
+ExecStart=/bin/sleep 600
+Restart=no
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl daemon-reload 2>/dev/null || true
+    log_info "Создан unit: $TEST_SERVICE_NAME"
+}
+
+remove_test_service() {
+    [ -z "$TEST_SERVICE_NAME" ] && return
+    systemctl stop "$TEST_SERVICE_NAME" 2>/dev/null || true
+    systemctl disable "$TEST_SERVICE_NAME" 2>/dev/null || true
+    rm -f "/etc/systemd/system/${TEST_SERVICE_NAME}" 2>/dev/null || true
+    systemctl daemon-reload 2>/dev/null || true
+    log_info "Удалён unit: $TEST_SERVICE_NAME"
+    TEST_SERVICE_NAME=""
+}
+
+test_services_start() {
+    log_step "ServicesCheck: запуск нового сервиса"
+
+    if ! section_enabled "services"; then
+        log_warn "checks.services.enable != true — пропуск"
+        return
+    fi
+
+    create_test_service
+    log_info "Запускаю $TEST_SERVICE_NAME"
+
+    systemctl start "$TEST_SERVICE_NAME" 2>/dev/null || {
+        log_fail "Не удалось запустить $TEST_SERVICE_NAME"
+        remove_test_service
+        fail=$((fail + 1))
+        return
+    }
+
+    wait_and_check "$TEST_SERVICE_NAME" "services: запуск зафиксирован"
+
+    systemctl stop "$TEST_SERVICE_NAME" 2>/dev/null || true
+    remove_test_service
+}
+
+test_services_stop() {
+    log_step "ServicesCheck: остановка сервиса"
+
+    if ! section_enabled "services"; then
+        log_warn "checks.services.enable != true — пропуск"
+        return
+    fi
+
+    create_test_service
+    systemctl start "$TEST_SERVICE_NAME" 2>/dev/null || true
+    sleep 1
+
+    log_info "Останавливаю $TEST_SERVICE_NAME"
+    systemctl stop "$TEST_SERVICE_NAME" 2>/dev/null || true
+
+    wait_and_check "$TEST_SERVICE_NAME" "services: остановка зафиксирована"
+
+    remove_test_service
+}
+
+test_services_restart() {
+    log_step "ServicesCheck: перезапуск сервиса (смена MainPID)"
+
+    if ! section_enabled "services"; then
+        log_warn "checks.services.enable != true — пропуск"
+        return
+    fi
+
+    create_test_service
+    systemctl start "$TEST_SERVICE_NAME" 2>/dev/null || true
+    sleep 1
+
+    local pid_before
+    pid_before=$(systemctl show -p MainPID --value "$TEST_SERVICE_NAME" 2>/dev/null)
+    log_info "MainPID до перезапуска: $pid_before"
+
+    systemctl restart "$TEST_SERVICE_NAME" 2>/dev/null || true
+    sleep 1
+
+    local pid_after
+    pid_after=$(systemctl show -p MainPID --value "$TEST_SERVICE_NAME" 2>/dev/null)
+    log_info "MainPID после перезапуска: $pid_after"
+
+    if [ "$pid_before" = "$pid_after" ]; then
+        log_warn "MainPID не изменился — сервис мог не перезапуститься"
+    fi
+
+    wait_and_check "$TEST_SERVICE_NAME" "services: перезапуск зафиксирован"
+
+    systemctl stop "$TEST_SERVICE_NAME" 2>/dev/null || true
+    remove_test_service
+}
+
+# =============================================================================
+# ТЕСТЫ: USERS
+# =============================================================================
+
 test_users_ssh_keys() {
     log_step "UsersCheck: изменение SSH-ключей"
+
+    if ! section_enabled "users"; then
+        log_warn "checks.users.enable != true — пропуск"
+        return
+    fi
 
     local test_user="yasmu-test-${TEST_ID}"
 
@@ -322,6 +614,33 @@ test_users_ssh_keys() {
 }
 
 # =============================================================================
+# ТЕСТЫ: WEB (заглушка)
+# =============================================================================
+
+test_web_unavailable() {
+    log_step "WebCheck: недоступный URL"
+
+    if ! section_enabled "web"; then
+        log_warn "checks.web.enable != true — пропуск"
+        return
+    fi
+
+    local url
+    url=$(grep -E "^\s*-\s*https?://" "$CONFIG" | head -1 | awk '{print $2}')
+    if [ -z "$url" ]; then
+        log_warn "web.urls пуст — пропуск"
+        return
+    fi
+
+    if ! curl -sf -o /dev/null --max-time 5 "$url"; then
+        log_warn "URL $url уже недоступен — тест неинформативен, пропуск"
+        return
+    fi
+
+    log_warn "web: тест недоступности требует ручной настройки — пропуск"
+}
+
+# =============================================================================
 # MAIN
 # =============================================================================
 
@@ -330,7 +649,7 @@ usage() {
 Использование: $0 [--config PATH] [--wait SEC]
 
 Опции:
-  --config PATH   конфиг YASMU (по умолчанию /etc/yasmu/config.yml)
+  --config PATH   конфиг YASMU (по умолчанию /etc/yasmu/config.yaml)
   --wait SEC      сколько ждать после триггера (по умолчанию check_timeout*2+10)
   -h, --help      эта справка
 EOF
@@ -379,9 +698,16 @@ test_files_create
 test_files_modify
 test_files_delete
 test_processes_new
+test_processes_stop
+test_processes_deleted_exe
 test_ports_new
+test_ports_close
 test_connections_bash
+test_services_start
+test_services_stop
+test_services_restart
 test_users_ssh_keys
+test_web_unavailable
 
 echo
 echo "=========================================="
@@ -390,4 +716,3 @@ echo "=========================================="
 
 [ "$fail" -gt 0 ] && exit 1
 exit 0
-

@@ -1,4 +1,4 @@
-VERSION := 1.0.0
+VERSION := 1.0.1
 ARCH    := amd64
 
 BIN     := bin/yasmu
@@ -30,6 +30,7 @@ deb: build
 	cp pkg/yasmu.service $(DEB_DIR)/lib/systemd/system/
 
 	cp pkg/debian-control $(DEB_DIR)/DEBIAN/control
+	echo "/etc/yasmu/config.yaml" > $(DEB_DIR)/DEBIAN/conffiles
 	sed -i "s/@VERSION@/$(VERSION)/" $(DEB_DIR)/DEBIAN/control
 
 	dpkg-deb --build $(DEB_DIR)

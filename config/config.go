@@ -112,6 +112,23 @@ checks:
           - 127.0.0.1
           - 10.0.0.0/8
 
+      - name: "Network utilities must not connect externally"
+        proto: tcp
+        state: ESTABLISHED
+        processes:
+          - nc
+          - nc.openbsd
+          - ncat
+          - socat
+          - telnet
+          - curl
+          - wget
+        allowed_remote:
+          - 127.0.0.1
+          - 10.0.0.0/8
+          - 192.168.0.0/16
+          - 172.16.0.0/12
+
       # Shells must never have network connections.
       # Any ESTABLISHED TCP connection owned by a shell is a violation,
       # regardless of the remote address.
@@ -126,7 +143,7 @@ checks:
           - dash
           - fish
         alert_on_match: true
-
+      
       # (Optional) Deny outbound DNS-over-TCP from anything except the
       # system resolver. Useful on locked-down servers.
       # - name: "DNS TCP only from resolver"
@@ -290,8 +307,8 @@ checks:
     # units:
     #   - sshd.service
     # Services filter
-    # exclude:
-    #   - sshd
+    exclude:
+      - apt-daily.service
     #   - apache2.service
 
   # User monitoring: UID, home directory, groups, SSH keys.

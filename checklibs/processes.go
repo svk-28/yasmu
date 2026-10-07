@@ -86,13 +86,13 @@ func CompareProcessLists(base, actual ProcessList) ProcessDiffResult {
                 fmt.Sprint(a.Deleted),
             })
         }
-        // if b.Suspicious != a.Suspicious {
-            // changes = append(changes, FieldChange{
-                // "suspicious",
-                // fmt.Sprint(b.Suspicious),
-                // fmt.Sprint(a.Suspicious),
-            // })
-        // }
+        if b.Suspicious != a.Suspicious {
+            changes = append(changes, FieldChange{
+                "suspicious",
+                fmt.Sprint(b.Suspicious),
+                fmt.Sprint(a.Suspicious),
+            })
+        }
         
         if len(changes) > 0 {
             res.Changed = append(res.Changed, ProcessDiff{PID: pid, Changes: changes})
@@ -129,24 +129,34 @@ func PrintProcessesDiff(d ProcessDiffResult, base, actual ProcessList, showUncha
             if meta, ok := base[pid]; ok && meta.Name != "" {
                 name = " (" + meta.Name + ", " + meta.Exe + ")"
             }
-            fmt.Fprintf(&sb, "   - PID %d%s\n", pid, name)
+            fmt.Fprintf(&sb, "   PID %d%s\n", pid, name)
         }
     }
 
     if len(d.OnlyInActual) > 0 {
         fmt.Fprintf(&sb, "\nNew processes (%d):\n", len(d.OnlyInActual))
         for _, pid := range d.OnlyInActual {
+            meta, ok := actual[pid]
             name := ""
-            if meta, ok := actual[pid]; ok && meta.Name != "" {
+            if ok && meta.Name != "" {
                 name = " (" + meta.Name + ", " + meta.Exe + ")"
                 if meta.Owner != "" {
                     name += ", owner=" + meta.Owner
                 }
             }
-            fmt.Fprintf(&sb, "   + PID %d%s\n", pid, name)
+            fmt.Fprintf(&sb, "   PID %d%s\n", pid, name)
+    
+            // Предупреждение о подозрительном процессе — один раз при обнаружении.
+            if ok && meta.Suspicious {
+                fmt.Fprintf(&sb, "       !!! WARNING: suspicious process detected\n")
+                if meta.Deleted {
+                    fmt.Fprintf(&sb, "       !!! reason: executable file has been deleted\n")
+                } else if meta.Exe == "" {
+                    fmt.Fprintf(&sb, "       !!! reason: executable path is not available\n")
+                }
+            }
         }
     }
-
     if len(d.Changed) > 0 {
         fmt.Fprintf(&sb, "\nChanged processes (%d):\n", len(d.Changed))
         sort.Slice(d.Changed, func(i, j int) bool {
@@ -157,7 +167,7 @@ func PrintProcessesDiff(d ProcessDiffResult, base, actual ProcessList, showUncha
             if meta, ok := actual[pd.PID]; ok && meta.Name != "" {
                 name = " (" + meta.Name + ", " + meta.Exe + ")"
             }
-            fmt.Fprintf(&sb, "   ~ PID %d%s\n", pd.PID, name)
+            fmt.Fprintf(&sb, "   PID %d%s\n", pd.PID, name)
             for _, ch := range pd.Changes {
                 fmt.Fprintf(&sb, "       %-6s: %q --> %q\n", ch.Field, ch.Old, ch.New)
             }
@@ -248,19 +258,15 @@ func GetProcessesList(cfg config.ProcessCheck) (ProcessList, []error) {
 	}
 
 	for _, p := range procs {
-		// 1. Name
 		name, _ := p.Name()
 
-		// 2. PPID
 		var ppid int32
 		if v, err := p.Ppid(); err == nil {
 			ppid = v
 		}
 
-		// 3. Exe (может вернуть ошибку для kernel threads)
 		rawExe, exeErr := p.Exe()
 
-		// 4. Фильтр kernel threads — ДО всего остального
 		if isKernelThread(name, ppid, exeErr, cfg.KernelThreads) {
 			continue
 		}
@@ -271,21 +277,21 @@ func GetProcessesList(cfg config.ProcessCheck) (ProcessList, []error) {
 			Name: name,
 		}
 
-		// 5. Exe: нормализация + флаг deleted
 		if rawExe != "" {
 			meta.Exe = strings.TrimSuffix(rawExe, " (deleted)")
 			meta.Deleted = strings.Contains(rawExe, "(deleted)")
+            if meta.Deleted {
+                meta.Suspicious = true   // удалённый бинарник — тоже подозрительно
+            }
 		} else if name != "" {
 			// Пустой Exe у НЕ-kernel-thread — подозрительно.
 			meta.Suspicious = true
 		}
 
-		// 6. Owner
 		if user, err := p.Username(); err == nil {
 			meta.Owner = user
 		}
 
-		// 7. Фильтр по exclude (по Name или Exe)
 		if isProcessExcluded(meta.Name, cfg.Exclude) {
 			continue
 		}
@@ -310,7 +316,30 @@ func ProcessesCheck(cfg config.ProcessCheck, previousProcessList ProcessList) (P
 
     if previousProcessList == nil {
         log.Printf("Baseline collected: %d processes", len(currentProcessList))
-        return cloneProcessList(currentProcessList), ""
+
+        var outString strings.Builder
+        var suspicious []int32
+        for pid, meta := range currentProcessList {
+            if meta.Suspicious {
+                suspicious = append(suspicious, pid)
+            }
+        }
+        if len(suspicious) > 0 {
+            sort.Slice(suspicious, func(i, j int) bool { return suspicious[i] < suspicious[j] })
+            fmt.Fprintf(&outString, "\nSuspicious processes detected (%d):\n", len(suspicious))
+            for _, pid := range suspicious {
+                meta := currentProcessList[pid]
+                fmt.Fprintf(&outString, "   PID %d (%s, %s), owner=%s\n",
+                    pid, meta.Name, meta.Exe, meta.Owner)
+                if meta.Deleted {
+                    fmt.Fprintf(&outString, "       !!! WARNING: executable file has been deleted\n")
+                } else if meta.Exe == "" {
+                    fmt.Fprintf(&outString, "       !!! WARNING: executable path is not available\n")
+                }
+            }
+        }
+
+        return cloneProcessList(currentProcessList), outString.String()
     }
 
     diff := CompareProcessLists(previousProcessList, currentProcessList)
@@ -318,3 +347,4 @@ func ProcessesCheck(cfg config.ProcessCheck, previousProcessList ProcessList) (P
 
     return cloneProcessList(currentProcessList), out
 }
+
