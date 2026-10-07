@@ -208,7 +208,7 @@ Each subsection is a separate check module. The flag `enable: false` skips the c
 |---|---|---|
 | `path` | string | Traversal root (recursive). |
 | `watch` | []string | `create`, `modify`, `delete`. Empty — all. |
-| `hash` | string | `blake3`, `sha256`, or empty. |
+| `hash` | string | `blake3`, or empty. |
 | `exclude` | []string | Subpaths to skip. |
 
 Compared: type, size, permissions, owner, group, modification time, hash.
