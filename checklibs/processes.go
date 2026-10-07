@@ -23,6 +23,7 @@ import (
     "github.com/shirou/gopsutil/v4/process"
     // For bsd systems
     // "github.com/tklauser/ps"
+    "yasmu/config"
 )
 
 type ProcessMeta struct {
@@ -210,92 +211,95 @@ func isProcessExcluded(name string, exclude []string) bool {
     return false
 }
 
-func isLinuxKernelThread(name string) bool {
-    if name == "" {
-        return true
-    }
-    prefixes := []string{
-        "kworker",        // workqueue workers
-        "ksoftirqd",      // softirq daemon
-        "kthreadd",       // kernel thread daemon
-        "migration",      // CPU migration
-        "rcu_",           // RCU callbacks
-        "kcompactd",      // memory compaction
-        "kswapd",         // swap daemon
-        "khugepaged",     // huge pages
-        "cpuhp/",         // CPU hotplug
-        "idle_inject/",   // idle injection
-        "scsi_",          // SCSI error handler
-        "irq/",           // IRQ threads
-        "kdevtmpfs",      // devtmpfs
-        "netns",          // network namespaces
-        "kauditd",        // audit daemon
-        "kblockd",        // block device workers
-        "kintegrityd",    // integrity
-        "kdmflush",       // device-mapper
-        "kaluad",         // ALUA
-        "kmpath_",        // multipath
-    }
-    for _, p := range prefixes {
-        if strings.HasPrefix(name, p) {
-            return true
-        }
-    }
-    return false
+// isKernelThread определяет, является ли процесс kernel thread.
+//
+// Логика:
+//  1. Если CheckPPID && (ppid == 0 || ppid == 2) — да.
+//  2. Если name == "" — да.
+//  3. Если Exe доступен (exeErr == nil) — НЕТ (kernel threads не имеют Exe).
+//  4. Если name начинается с одного из Prefixes — да.
+//  5. Иначе — нет.
+func isKernelThread(name string, ppid int32, exeErr error, cfg config.KernelThreadsConfig) bool {
+	if cfg.CheckPPID && (ppid == 0 || ppid == 2) {
+		return true
+	}
+	if name == "" {
+		return true
+	}
+	if exeErr == nil {
+		return false
+	}
+	for _, p := range cfg.Prefixes {
+		p = strings.TrimSpace(p)
+		if p != "" && strings.HasPrefix(name, p) {
+			return true
+		}
+	}
+	return false
 }
 
-func GetProcessesList(exclude []string) (ProcessList, []error) {
-    result := make(ProcessList)
-    var errs []error
+func GetProcessesList(cfg config.ProcessCheck) (ProcessList, []error) {
+	result := make(ProcessList)
+	var errs []error
 
-    procs, err := process.Processes()
-    if err != nil {
-        return nil, []error{fmt.Errorf("list processes: %w", err)}
-    }
+	procs, err := process.Processes()
+	if err != nil {
+		return nil, []error{fmt.Errorf("list processes: %w", err)}
+	}
 
-    for _, p := range procs {
-        rawExe, exeErr := p.Exe()
-        name, _ := p.Name()
+	for _, p := range procs {
+		// 1. Name
+		name, _ := p.Name()
 
-        if exeErr != nil && isLinuxKernelThread(name) {
-            continue
-        }
+		// 2. PPID
+		var ppid int32
+		if v, err := p.Ppid(); err == nil {
+			ppid = v
+		}
 
-        meta := ProcessMeta{
-            PID: p.Pid,
-            Name: name,
-        }
+		// 3. Exe (может вернуть ошибку для kernel threads)
+		rawExe, exeErr := p.Exe()
 
-        if rawExe != "" {
-            meta.Exe = strings.TrimSuffix(rawExe, " (deleted)")
-            meta.Deleted = strings.Contains(rawExe, "(deleted)")
-        } else if name != "" {
-            // An empty EXE in a non‑kernel‑thread process is suspicious.
-            meta.Suspicious = true
-        }
+		// 4. Фильтр kernel threads — ДО всего остального
+		if isKernelThread(name, ppid, exeErr, cfg.KernelThreads) {
+			continue
+		}
 
-        if ppid, err := p.Ppid(); err == nil {
-            meta.PPID = ppid
-        }
+		meta := ProcessMeta{
+			PID:  p.Pid,
+			PPID: ppid,
+			Name: name,
+		}
 
-        if user, err := p.Username(); err == nil {
-            meta.Owner = user
-        }
+		// 5. Exe: нормализация + флаг deleted
+		if rawExe != "" {
+			meta.Exe = strings.TrimSuffix(rawExe, " (deleted)")
+			meta.Deleted = strings.Contains(rawExe, "(deleted)")
+		} else if name != "" {
+			// Пустой Exe у НЕ-kernel-thread — подозрительно.
+			meta.Suspicious = true
+		}
 
-        if isProcessExcluded(meta.Name, exclude) {
-            continue
-        }
+		// 6. Owner
+		if user, err := p.Username(); err == nil {
+			meta.Owner = user
+		}
 
-        result[p.Pid] = meta
-    }
+		// 7. Фильтр по exclude (по Name или Exe)
+		if isProcessExcluded(meta.Name, cfg.Exclude) {
+			continue
+		}
 
-    return result, errs
+		result[p.Pid] = meta
+	}
+
+	return result, errs
 }
 
-func ProcessesCheck(exclude []string, previousProcessList ProcessList) (ProcessList, string) {
+func ProcessesCheck(cfg config.ProcessCheck, previousProcessList ProcessList) (ProcessList, string) {
     log.Println("Running checklibs/ProcessesCheck")
 
-    currentProcessList, errs := GetProcessesList(exclude)
+    currentProcessList, errs := GetProcessesList(cfg)
     for _, e := range errs {
         log.Printf("warn: %v", e)
     }

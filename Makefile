@@ -8,13 +8,13 @@ RPM_DIR := ~/rpmbuild
 .PHONY: run build static deb rpm clean
 
 run:
-	go run main.go config.go
+	go run main.go
 
 build:
-	go build -ldflags "-s -w" -o bin/yasmu main.go config.go
+	go build -ldflags "-s -w" -o bin/yasmu main.go
 
 static:
-	CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH) go build -ldflags "-s -w" -o bin/yasmu-static  main.go config.go
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH) go build -ldflags "-s -w" -o bin/yasmu-static  main.go
 
 deb: build
 	mkdir -p $(DEB_DIR)/DEBIAN

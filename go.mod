@@ -1,4 +1,4 @@
-module watchdog
+module yasmu
 
 go 1.26.4
 

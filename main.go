@@ -25,9 +25,10 @@ import (
     "path/filepath"
     "encoding/gob"
 
-    "watchdog/checklibs"
-    "watchdog/mainlibs"
-    "watchdog/notifylibs"
+    "yasmu/checklibs"
+    "yasmu/mainlibs"
+    "yasmu/notifylibs"
+    "yasmu/config"
 
     "github.com/sevlyar/go-daemon"
 )
@@ -54,7 +55,7 @@ var (
 
 )
 
-func runChecks(cfg *Config) {
+func runChecks(cfg *config.Config) {
     var (
         resultOfFilesCheck     string
         resultOfUsersCheck     string
@@ -80,7 +81,7 @@ func runChecks(cfg *Config) {
     // *********** Processes Checks ***************
     if cfg.Checks.Processes.Enable {
         previousProcessList, resultOfProcessesCheck = checklibs.ProcessesCheck(
-            cfg.Checks.Processes.Exclude,
+            cfg.Checks.Processes,
             previousProcessList,
         )
         if resultOfProcessesCheck != "" {
@@ -129,6 +130,7 @@ func runChecks(cfg *Config) {
         previousPortList, resultOfPortsCheck = checklibs.PortsCheck(opts, previousPortList)
         if resultOfPortsCheck != "" {
             log.Println("Changes in ports have been recorded:")
+            fmt.Fprintf(&summaryReport, "\n========= Changes in ports checks have been recorded =========\n")
             log.Println(resultOfPortsCheck)
             summaryReport.WriteString(resultOfPortsCheck)
         } else {
@@ -190,12 +192,12 @@ func runChecks(cfg *Config) {
 
     // *********** Sending Summary Report ***************
 	if len(summaryReport.String()) != 0 {
-		log.Println("Result of all checks:", summaryReport.String())
+		// log.Println("Result of all checks:", summaryReport.String())
 		SendNotifycation(cfg, summaryReport.String())
 	}
 }
 
-func RunService(ctx context.Context, cfg *Config) {
+func RunService(ctx context.Context, cfg *config.Config) {
 	timeout := time.Duration(cfg.Daemon.CheckTimeout) * time.Second
 	if timeout <= 0 {
 		timeout = 30 * time.Second
@@ -215,7 +217,7 @@ func RunService(ctx context.Context, cfg *Config) {
     SaveState(cfg)
 }
 
-func DaemonRun(cfg *Config) {
+func DaemonRun(cfg *config.Config) {
         cntxt := &daemon.Context{
         PidFileName: cfg.Daemon.PidFile,
         PidFilePerm: 0600,
@@ -283,7 +285,7 @@ func DaemonStop(pidFile string) error {
     return nil
 }
 
-func SendNotifycation(cfg *Config, msg string) {
+func SendNotifycation(cfg *config.Config, msg string) {
 	hostname, err := mainlibs.GetFQDN()
 	if err != nil {
 		log.Fatal(err)
@@ -384,7 +386,7 @@ func LoadStateFromFile(path string, mapState any) error {
 }
 
 // Saving the state of checks when exiting the program
-func SaveState(cfg *Config) {
+func SaveState(cfg *config.Config) {
     save := func(name string, src any) {
         path := filepath.Join(cfg.Daemon.WorkDir, name)
         if err := SaveStateToFile(path, src); err != nil {
@@ -401,7 +403,7 @@ func SaveState(cfg *Config) {
 }
 
 // LoadState loads the state of previous checks from files.
-func LoadState(cfg *Config) {
+func LoadState(cfg *config.Config) {
     load := func(name string, dst any) {
         path := filepath.Join(cfg.Daemon.WorkDir, name)
         if !mainlibs.IsFile(path) {
@@ -444,13 +446,13 @@ func main() {
     // log.SetPrefix("")
     
 	if MakeConfig {
-		if err := ConfigMake(ConfigTemplate, ConfigFile); err != nil {
+		if err := config.ConfigMake(config.ConfigTemplate, ConfigFile); err != nil {
 			log.Fatal(err)
 		}
 		os.Exit(0)
 	}
 
-	cfg, err := ConfigLoad(ConfigFile)
+	cfg, err := config.ConfigLoad(ConfigFile)
 	if err != nil {
 		log.Fatal(err)
 	}

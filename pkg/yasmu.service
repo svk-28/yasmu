@@ -3,9 +3,9 @@ Description=YASMU - Yet Another System Monitoring Utility
 After=network.target
 
 [Service]
-Type=simple
+Type=forking
 ExecStart=/usr/bin/yasmu -config /etc/yasmu/config.yaml -daemon-start
-Restart=always
+Restart=on-failure
 RestartSec=10
 
 [Install]

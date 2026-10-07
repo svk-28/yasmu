@@ -12,7 +12,7 @@
 // Displaying settings on the screen.
 // *******************************************************
 
-package main
+package mainlibs
 
 import (
 	"fmt"
@@ -77,13 +77,13 @@ checks:
           - 127.0.0.0/8
 
       # PostgreSQL must accept connections only from the LAN.
-      - name: "PostgreSQL from LAN only"
-        proto: tcp
-        port: 5432
-        state: ESTABLISHED
-        allowed_remote:
-          - 10.0.0.0/8
-          - 127.0.0.1
+      #- name: "PostgreSQL from LAN only"
+      #  proto: tcp
+      #  port: 5432
+      #  state: ESTABLISHED
+      #  allowed_remote:
+      #    - 10.0.0.0/8
+      #    - 127.0.0.1
 
       # Interpreters must not open external connections.
       # Any ESTABLISHED connection owned by python/python3/php/... to a remote
@@ -209,13 +209,13 @@ checks:
     established: false
   # Ports filter
     exclude_ports:
-        - 587
-        - 10024
-        - 10026
-        - 10032
+    #    - 587
+    #    - 10024
+    #    - 10026
+    #    - 10032
     # Proccesses filter
     exclude_processes:
-        - /opt/zimbra
+    #    - /opt/zimbra
     # Do not consider a change in PID/Exe to be a change in the socket.
     ignore_pid_changes: false
 
@@ -228,7 +228,60 @@ checks:
     # Example: kworker/13:0-events, kworker/u64:3-... — all excluded.
     exclude:
      # - kworker
+    #
+    kernel_threads:
+      # If true, a process with PPID 0 (swapper) or 2 (kthreadd) is
+      # considered a kernel thread. This is the most reliable check
+      # on Linux.
+      check_ppid: true
 
+      # List of name prefixes. Used as a fallback when PPID doesn't help
+      # (e.g. non-Linux systems, or when /proc/<pid>/stat is unreadable).
+      # Only applied when Exe is NOT available — a real process with
+      # matching name but valid Exe will NOT be filtered.
+      prefixes:
+        - kworker
+        - ksoftirqd
+        - kthreadd
+        - migration
+        - rcu_
+        - kcompactd
+        - kswapd
+        - khugepaged
+        - cpuhp/
+        - idle_inject/
+        - scsi_
+        - irq/
+        - kdevtmpfs
+        - netns
+        - kauditd
+        - kblockd
+        - kintegrityd
+        - kdmflush
+        - kaluad
+        - kmpath_
+        # IBM Power
+        - psimon
+        # Другие ядерные потоки
+        - ksoftirq/
+        - kworker/
+        - writeback
+        - crypto
+        - bioset
+        - kthrotld
+        - ipv6_addrconf
+        - deferwq
+        - kstrp
+        - kdmflush
+        - kcopyd
+        - xfs-
+        - ext4-
+        - jbd2
+        - kvm-
+        - nfsd
+        - lockd
+        - rpciod
+        - oom_reaper
   # systemd service monitoring via D-Bus (LoadState, ActiveState, SubState, MainPID).
   services:
     enable: false
@@ -342,6 +395,12 @@ type ChecksConfig struct {
 type ProcessCheck struct {
 	Enable bool `yaml:"enable"`
     Exclude []string `yaml:"exclude"`
+    KernelThreads KernelThreadsConfig `yaml:"kernel_threads"`
+}
+
+type KernelThreadsConfig struct {
+    CheckPPID bool     `yaml:"check_ppid"`
+    Prefixes  []string `yaml:"prefixes"`
 }
 
 type UsersCheck struct {

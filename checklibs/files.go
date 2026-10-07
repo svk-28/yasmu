@@ -33,7 +33,7 @@ import (
 
     "github.com/zeebo/blake3"
 
-	"watchdog/mainlibs"
+	"yasmu/mainlibs"
 )
 
 type PathSpec struct {
