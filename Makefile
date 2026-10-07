@@ -26,7 +26,7 @@ deb: build
 
 	./bin/yasmu -config build/config.yaml -make-config
 
-	cp build/config.yaml $(DEB_DIR)/etc/yasmu/config.yml
+	cp build/config.yaml $(DEB_DIR)/etc/yasmu/config.yaml
 	cp pkg/yasmu.service $(DEB_DIR)/lib/systemd/system/
 
 	cp pkg/debian-control $(DEB_DIR)/DEBIAN/control

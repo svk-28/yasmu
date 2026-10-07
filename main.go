@@ -477,7 +477,9 @@ func main() {
     if RunAsDaemon {
         DaemonRun(cfg)
     } else if RunOnce {
-        runChecks(cfg)
+        LoadState(cfg)
+		runChecks(cfg)
+        SaveState(cfg)
     } else {
         RunService(ctx, cfg)
     }
