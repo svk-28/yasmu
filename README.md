@@ -295,7 +295,10 @@ Compared: LoadState, ActiveState, SubState, MainPID.
           - name: "shell must not have network"
             proto: tcp
             state: ESTABLISHED
-            processes: [bash, sh]
+            processes:
+              - bash
+              - sh
+              - ksh
             alert_on_match: true
 
 | Name | Type | Description |
@@ -453,4 +456,3 @@ GPL v3. See the LICENSE file in the repository.
 ## Links
 
 - Home page: https://nuk-svk.ru
-
