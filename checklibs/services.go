@@ -196,7 +196,6 @@ func GetServicesList(exclude []string, units []string) (ServiceList, []error) {
             meta.SubState = v
         }
 
-        // MainPID — в интерфейсе Service, отдельный запрос.
         prop, err := conn.GetUnitTypeProperty(name, "Service", "MainPID")
         if err == nil && prop != nil {
             var pid uint32
@@ -205,20 +204,14 @@ func GetServicesList(exclude []string, units []string) (ServiceList, []error) {
             }
         }
 
-        // UnitFileState — через интерфейс UnitFile.
-        // Свойство UnitFileState живёт в org.freedesktop.systemd1.UnitFile,
-        // а не в org.freedesktop.systemd1.Unit.
         propFile, err := conn.GetUnitProperty(name, "UnitFileState")
         if err != nil {
-            // Не критично — у transient/generated юнитов может не быть.
-            // Просто оставляем поле пустым.
         } else if propFile != nil {
             var state string
             if err := propFile.Value.Store(&state); err == nil {
                 meta.UnitFileState = state
             }
         }
-        // log.Println("Systemd unit propFile:", meta.Name, propFile)
 
         if isProcessExcluded(meta.Name, exclude) {
             continue

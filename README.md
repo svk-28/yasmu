@@ -305,15 +305,15 @@ Compared: LoadState, ActiveState, SubState, MainPID.
               - ksh
             alert_on_match: true
 
-| Name | Type | Description |
-|---|---|---|
-| `name` | string | Rule name. |
-| `proto` | string | Protocol tcp / udp. |
-| `port` | uint32 | Local port. |
-| `state` | string | TCP state. |
-| `processes` | []string | Exact basenames. |
-| `allowed_remote` | []string | List of allowed IPs/CIDRs. |
-| `alert_on_match` | bool | Inverts the logic. |
+| Name             | Type     | Description
+| ---              | ---      | ---
+| `name`           | string   | Rule name.
+| `proto`          | string   | Protocol tcp / udp.
+| `port`           | uint32   | Local port.
+| `state`          | string   | TCP state.
+| `processes`      | []string | Exact basenames.
+| `allowed_remote` | []string | List of allowed IPs/CIDRs.
+| `alert_on_match` | bool     | Inverts the logic.
 
 #### `checks.web`
 
