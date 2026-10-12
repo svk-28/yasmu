@@ -29,6 +29,7 @@ type ServiceMeta struct {
     ActiveState string // active / inactive / failed
     SubState    string // running / exited / failed
     MainPID     uint32 // PID of main process (0, if not running)
+    UnitFileState string // enabled / disabled / static / masked / ...
 }
 
 type ServiceList map[string]ServiceMeta
@@ -71,6 +72,14 @@ func CompareServiceLists(base, actual ServiceList) ServiceDiffResult {
                 "pid",
                 fmt.Sprint(b.MainPID),
                 fmt.Sprint(a.MainPID),
+            })
+        }
+
+        if b.UnitFileState != a.UnitFileState {
+            changes = append(changes, FieldChange{
+                "Unit file state",
+                b.UnitFileState,
+                a.UnitFileState,
             })
         }
 
@@ -195,6 +204,21 @@ func GetServicesList(exclude []string, units []string) (ServiceList, []error) {
                 meta.MainPID = pid
             }
         }
+
+        // UnitFileState — через интерфейс UnitFile.
+        // Свойство UnitFileState живёт в org.freedesktop.systemd1.UnitFile,
+        // а не в org.freedesktop.systemd1.Unit.
+        propFile, err := conn.GetUnitProperty(name, "UnitFileState")
+        if err != nil {
+            // Не критично — у transient/generated юнитов может не быть.
+            // Просто оставляем поле пустым.
+        } else if propFile != nil {
+            var state string
+            if err := propFile.Value.Store(&state); err == nil {
+                meta.UnitFileState = state
+            }
+        }
+        // log.Println("Systemd unit propFile:", meta.Name, propFile)
 
         if isProcessExcluded(meta.Name, exclude) {
             continue

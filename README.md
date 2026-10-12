@@ -159,15 +159,15 @@ When running as a service, both when the daemon is stopped by standard means (sy
 
 ## Command Line
 
-| Flag | Description |
-|---|---|
-| `-config PATH` | Path to the configuration file. Defaults to `config.yaml`. |
-| `-run-once` | Run all checks once (the check state will be saved) and exit. |
-| `-daemon-start` | Start as a daemon. |
-| `-daemon-stop` | Stop the daemon. |
-| `-make-config` | Create a configuration file from the template. |
-| `-version` | Show the version and exit. |
-| `-h`, `-help` | Show help. |
+| Flag            | Description
+| ---             | ---
+| `-config PATH`  | Path to the configuration file. Defaults to `config.yaml`.
+| `-run-once`     | Run all checks once (the check state will be saved) and exit.
+| `-daemon-start` | Start as a daemon.
+| `-daemon-stop`  | Stop the daemon.
+| `-make-config`  | Create a configuration file from the template.
+| `-version`      | Show the version and exit.
+| `-h`, `-help`   | Show help.
 
 ---
 
@@ -175,12 +175,12 @@ When running as a service, both when the daemon is stopped by standard means (sy
 
 ### `daemon` Section
 
-| Field | Type | Description |
-|---|---|---|
-| `check_timeout` | int | Pause between iterations, in seconds. `<= 0` → 30 seconds. |
-| `pid_file` | string | Path to the PID file. |
-| `log_file` | string | Path to the log file. |
-| `work_dir` | string | Daemon working directory. |
+| Field           | Type   | Description
+| ---             | ---    | ---
+| `check_timeout` | int    | Pause between iterations, in seconds. `<= 0` → 30 seconds.
+| `pid_file`      | string | Path to the PID file.
+| `log_file`      | string | Path to the log file.
+| `work_dir`      | string | Daemon working directory.
 
     daemon:
       check_timeout: 60
@@ -204,12 +204,12 @@ Each subsection is a separate check module. The flag `enable: false` skips the c
             exclude:
               - /etc/mtab
 
-| Field | Type | Description |
-|---|---|---|
-| `path` | string | Traversal root (recursive). |
-| `watch` | []string | `create`, `modify`, `delete`. Empty — all. |
-| `hash` | string | `blake3`, or empty. |
-| `exclude` | []string | Subpaths to skip. |
+| Field     | Type     | Description
+| ---       | ---      | ---
+| `path`    | string   | Traversal root (recursive).
+| `watch`   | []string | `create`, `modify`, `delete`. Empty — all.
+| `hash`    | string   | `blake3`, or empty.
+| `exclude` | []string | Subpaths to skip.
 
 Compared: type, size, permissions, owner, group, modification time, hash.
 
@@ -235,11 +235,15 @@ Compared: UID, primary GID, home, groups, `~/.ssh/authorized_keys`.
             - kworker
             - psimon
 
-| Field | Type | Description |
-|---|---|---|
-| `exclude` | []string | Skip processes if the Exe file contains the specified string. |
-| `check_ppid` | bool | Enables the filter by parent process ID, 0 (swapper) or 2 (kthreadd), to filter kernel threads. |
-| `prefixes` | []string | List of name prefixes. Used as a fallback when PPID doesn't help (e.g., on non-Linux systems, or when /proc/<pid>/stat is unreadable). Applied only when Exe is NOT available — a real process with a matching name but a valid Exe will NOT be filtered. |
+| Field                                                                   | Type     | Description
+| ---                                                                     | ---      | ---
+| `exclude`                                                               | []string | Skip processes if the Exe file contains the specified string.
+| `check_ppid`                                                            | bool     | Enables the filter by parent process ID, 0 (swapper) or 2 (kthreadd),
+| to filter kernel threads.
+| `prefixes`                                                              | []string | List of name prefixes. Used as a fallback when PPID doesn't help
+| (e.g., on non-Linux systems, or when /proc/<pid>/stat is unreadable).
+| Applied only when Exe is NOT available — a real process with a matching
+| name but a valid Exe will NOT be filtered.
 
 Compared: PID, PPID, Name, Owner, Exe, Deleted, Suspicious.
 
@@ -255,12 +259,12 @@ Compared: PID, PPID, Name, Owner, Exe, Deleted, Suspicious.
           - some-process
         ignore_pid_changes: false
 
-| Field | Type | Description |
-|---|---|---|
-| `established` | bool | Include ESTABLISHED TCP. |
-| `exclude_ports` | []uint32 | Ports to skip. |
-| `exclude_processes` | []string | Skip processes if the Exe file contains the specified string. |
-| `ignore_pid_changes` | bool | Ignore PID/Exe changes. |
+| Field                | Type     | Description
+| ---                  | ---      | ---
+| `established`        | bool     | Include ESTABLISHED TCP.
+| `exclude_ports`      | []uint32 | Ports to skip.
+| `exclude_processes`  | []string | Skip processes if the Exe file contains the specified string.
+| `ignore_pid_changes` | bool     | Ignore PID/Exe changes.
 
 #### `checks.services`
 
@@ -273,10 +277,10 @@ Compared: PID, PPID, Name, Owner, Exe, Deleted, Suspicious.
         exclude:
           - NetworkManager-dispatcher.service
 
-| Name | Type | Description |
-|---|---|---|
-| `units` | []string | List of services to monitor. If empty, then all services. |
-| `exclude` | []string | Filter (list) for exclusion. |
+| Name      | Type     | Description
+| ---       | ---      | ---
+| `units`   | []string | List of services to monitor. If empty, then all services.
+| `exclude` | []string | Filter (list) for exclusion.
 
 Compared: LoadState, ActiveState, SubState, MainPID.
 

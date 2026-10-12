@@ -24,6 +24,7 @@ WAIT_AFTER=""
 NC_LISTEN=""
 TEST_FILES_PATH=""
 TEST_SERVICE_NAME=""
+TEST_SERVICE_2=""
 
 pass=0
 fail=0
@@ -39,7 +40,8 @@ log_step() { echo; echo -e "${BLUE}=== $* ===${NC}"; }
 # =============================================================================
 
 cleanup() {
-    remove_test_service 2>/dev/null || true
+    remove_test_service "$TEST_SERVICE_NAME" 2>/dev/null || true
+    remove_test_service "$TEST_SERVICE_2" 2>/dev/null || true
     userdel -r "yasmu-test-${TEST_ID}" 2>/dev/null || true
     rm -f "/tmp/yasmu-test-bin-${TEST_ID}" 2>/dev/null || true
     rm -f "${TEST_FILES_PATH}/yasmu-test-new-${TEST_ID}.txt" 2>/dev/null || true
@@ -144,8 +146,6 @@ read_log() {
 # ПРОВЕРКИ
 # =============================================================================
 
-# Проверяет, включена ли секция конфига (enable: true).
-# Ищет "  <section>:" на уровне 2 пробелов, потом первый enable: внутри.
 section_enabled() {
     local section="$1"
     awk -v sec="$section" '
@@ -176,7 +176,6 @@ assert_in_log() {
     fi
 }
 
-# Ждёт сработки с ретраями: не один sleep, а периодические проверки лога.
 wait_and_check() {
     local needle="$1"; local label="$2"
     local deadline=$(( $(date +%s) + WAIT_AFTER + CHECK_TIMEOUT ))
@@ -202,7 +201,6 @@ wait_and_check() {
     fail=$((fail + 1))
 }
 
-# Извлекает первый files.path из конфига (устойчиво к отступам)
 get_first_files_path() {
     grep -E "^\s*-\s*path:\s+\S" "$CONFIG" | head -1 | \
         sed -E 's/^\s*-\s*path:\s*//; s/\s.*$//'
@@ -465,12 +463,13 @@ test_connections_bash() {
 # =============================================================================
 
 create_test_service() {
-    TEST_SERVICE_NAME="yasmu-test-${TEST_ID}.service"
-    local unit_path="/etc/systemd/system/${TEST_SERVICE_NAME}"
+    local name="$1"
+    local unit_path="/etc/systemd/system/${name}"
 
     cat > "$unit_path" <<EOF
 [Unit]
 Description=YASMU test service (safe to remove)
+After=network.target
 
 [Service]
 Type=simple
@@ -482,78 +481,98 @@ WantedBy=multi-user.target
 EOF
 
     systemctl daemon-reload 2>/dev/null || true
-    log_info "Создан unit: $TEST_SERVICE_NAME"
+    log_info "Создан unit: $name"
 }
 
 remove_test_service() {
-    [ -z "$TEST_SERVICE_NAME" ] && return
-    systemctl stop "$TEST_SERVICE_NAME" 2>/dev/null || true
-    systemctl disable "$TEST_SERVICE_NAME" 2>/dev/null || true
-    rm -f "/etc/systemd/system/${TEST_SERVICE_NAME}" 2>/dev/null || true
+    local name="$1"
+    [ -z "$name" ] && return
+    systemctl stop "$name" 2>/dev/null || true
+    systemctl disable "$name" 2>/dev/null || true
+    rm -f "/etc/systemd/system/${name}" 2>/dev/null || true
     systemctl daemon-reload 2>/dev/null || true
-    log_info "Удалён unit: $TEST_SERVICE_NAME"
-    TEST_SERVICE_NAME=""
+    log_info "Удалён unit: $name"
 }
 
+service_state() {
+    local name="$1"
+    systemctl show -p ActiveState,SubState --value "$name" 2>/dev/null | tr '\n' '/'
+}
+
+# --- Запуск нового сервиса (не был enabled, не был запущен) ---
 test_services_start() {
-    log_step "ServicesCheck: запуск нового сервиса"
+    log_step "ServicesCheck: запуск нового сервиса (start)"
 
     if ! section_enabled "services"; then
         log_warn "checks.services.enable != true — пропуск"
         return
     fi
 
-    create_test_service
-    log_info "Запускаю $TEST_SERVICE_NAME"
+    TEST_SERVICE_NAME="yasmu-test-start-${TEST_ID}.service"
+    create_test_service "$TEST_SERVICE_NAME"
 
+    log_info "Запускаю $TEST_SERVICE_NAME"
     systemctl start "$TEST_SERVICE_NAME" 2>/dev/null || {
         log_fail "Не удалось запустить $TEST_SERVICE_NAME"
-        remove_test_service
-        fail=$((fail + 1))
-        return
+        remove_test_service "$TEST_SERVICE_NAME"
+        TEST_SERVICE_NAME=""
+        fail=$((fail + 1)); return
     }
+
+    log_info "Состояние: $(service_state "$TEST_SERVICE_NAME")"
 
     wait_and_check "$TEST_SERVICE_NAME" "services: запуск зафиксирован"
 
-    systemctl stop "$TEST_SERVICE_NAME" 2>/dev/null || true
-    remove_test_service
+    remove_test_service "$TEST_SERVICE_NAME"
+    TEST_SERVICE_NAME=""
 }
 
+# --- Остановка сервиса ---
 test_services_stop() {
-    log_step "ServicesCheck: остановка сервиса"
+    log_step "ServicesCheck: остановка сервиса (stop)"
 
     if ! section_enabled "services"; then
         log_warn "checks.services.enable != true — пропуск"
         return
     fi
 
-    create_test_service
+    TEST_SERVICE_NAME="yasmu-test-stop-${TEST_ID}.service"
+    create_test_service "$TEST_SERVICE_NAME"
+
     systemctl start "$TEST_SERVICE_NAME" 2>/dev/null || true
     sleep 1
+    log_info "Запущен, ждём фиксации"
+    sleep "$WAIT_AFTER"
 
     log_info "Останавливаю $TEST_SERVICE_NAME"
     systemctl stop "$TEST_SERVICE_NAME" 2>/dev/null || true
+    log_info "Состояние: $(service_state "$TEST_SERVICE_NAME")"
 
     wait_and_check "$TEST_SERVICE_NAME" "services: остановка зафиксирована"
 
-    remove_test_service
+    remove_test_service "$TEST_SERVICE_NAME"
+    TEST_SERVICE_NAME=""
 }
 
+# --- Перезапуск (restart) ---
 test_services_restart() {
-    log_step "ServicesCheck: перезапуск сервиса (смена MainPID)"
+    log_step "ServicesCheck: перезапуск сервиса (restart, смена MainPID)"
 
     if ! section_enabled "services"; then
         log_warn "checks.services.enable != true — пропуск"
         return
     fi
 
-    create_test_service
+    TEST_SERVICE_NAME="yasmu-test-restart-${TEST_ID}.service"
+    create_test_service "$TEST_SERVICE_NAME"
+
     systemctl start "$TEST_SERVICE_NAME" 2>/dev/null || true
     sleep 1
 
     local pid_before
     pid_before=$(systemctl show -p MainPID --value "$TEST_SERVICE_NAME" 2>/dev/null)
     log_info "MainPID до перезапуска: $pid_before"
+    sleep "$WAIT_AFTER"
 
     systemctl restart "$TEST_SERVICE_NAME" 2>/dev/null || true
     sleep 1
@@ -568,8 +587,100 @@ test_services_restart() {
 
     wait_and_check "$TEST_SERVICE_NAME" "services: перезапуск зафиксирован"
 
-    systemctl stop "$TEST_SERVICE_NAME" 2>/dev/null || true
-    remove_test_service
+    remove_test_service "$TEST_SERVICE_NAME"
+    TEST_SERVICE_NAME=""
+}
+
+# --- Enable + start (включение в автозапуск и запуск) ---
+test_services_enable_start() {
+    log_step "ServicesCheck: enable + start (включение и запуск)"
+
+    if ! section_enabled "services"; then
+        log_warn "checks.services.enable != true — пропуск"
+        return
+    fi
+
+    TEST_SERVICE_NAME="yasmu-test-enable-${TEST_ID}.service"
+    create_test_service "$TEST_SERVICE_NAME"
+
+    log_info "Включаю в автозапуск и запускаю $TEST_SERVICE_NAME"
+    systemctl enable --now "$TEST_SERVICE_NAME" 2>/dev/null || {
+        log_fail "Не удалось enable+start $TEST_SERVICE_NAME"
+        remove_test_service "$TEST_SERVICE_NAME"
+        TEST_SERVICE_NAME=""
+        fail=$((fail + 1)); return
+    }
+
+    log_info "Состояние: $(service_state "$TEST_SERVICE_NAME")"
+    log_info "Enabled: $(systemctl is-enabled "$TEST_SERVICE_NAME" 2>/dev/null)"
+
+    # YASMU отслеживает ActiveState/SubState/MainPID.
+    # При enable --now сервис переходит из inactive/dead в active/running.
+    wait_and_check "$TEST_SERVICE_NAME" "services: enable+start зафиксирован"
+
+    remove_test_service "$TEST_SERVICE_NAME"
+    TEST_SERVICE_NAME=""
+}
+
+# --- Disable + stop (выключение из автозапуска и остановка) ---
+test_services_disable_stop() {
+    log_step "ServicesCheck: disable + stop (выключение и остановка)"
+
+    if ! section_enabled "services"; then
+        log_warn "checks.services.enable != true — пропуск"
+        return
+    fi
+
+    TEST_SERVICE_NAME="yasmu-test-disable-${TEST_ID}.service"
+    create_test_service "$TEST_SERVICE_NAME"
+
+    systemctl enable --now "$TEST_SERVICE_NAME" 2>/dev/null || true
+    sleep 1
+    log_info "Запущен и включён, ждём фиксации"
+    sleep "$WAIT_AFTER"
+
+    log_info "Выключаю из автозапуска и останавливаю $TEST_SERVICE_NAME"
+    systemctl disable --now "$TEST_SERVICE_NAME" 2>/dev/null || true
+
+    log_info "Состояние: $(service_state "$TEST_SERVICE_NAME")"
+    log_info "Enabled: $(systemctl is-enabled "$TEST_SERVICE_NAME" 2>/dev/null)"
+
+    wait_and_check "$TEST_SERVICE_NAME" "services: disable+stop зафиксирован"
+
+    remove_test_service "$TEST_SERVICE_NAME"
+    TEST_SERVICE_NAME=""
+}
+
+# --- Массовое изменение: включение нескольких сервисов сразу ---
+test_services_enable_multiple() {
+    log_step "ServicesCheck: enable нескольких сервисов сразу"
+
+    if ! section_enabled "services"; then
+        log_warn "checks.services.enable != true — пропуск"
+        return
+    fi
+
+    TEST_SERVICE_NAME="yasmu-test-m1-${TEST_ID}.service"
+    TEST_SERVICE_2="yasmu-test-m2-${TEST_ID}.service"
+
+    create_test_service "$TEST_SERVICE_NAME"
+    create_test_service "$TEST_SERVICE_2"
+
+    log_info "Запускаю оба сервиса"
+    systemctl start "$TEST_SERVICE_NAME" 2>/dev/null || true
+    systemctl start "$TEST_SERVICE_2" 2>/dev/null || true
+
+    sleep 2
+
+    # Оба должны появиться в отчёте
+    wait_and_check "$TEST_SERVICE_NAME" "services: первый сервис зафиксирован"
+    wait_and_check "$TEST_SERVICE_2" "services: второй сервис зафиксирован"
+
+    systemctl stop "$TEST_SERVICE_NAME" "$TEST_SERVICE_2" 2>/dev/null || true
+    remove_test_service "$TEST_SERVICE_NAME"
+    remove_test_service "$TEST_SERVICE_2"
+    TEST_SERVICE_NAME=""
+    TEST_SERVICE_2=""
 }
 
 # =============================================================================
@@ -614,7 +725,7 @@ test_users_ssh_keys() {
 }
 
 # =============================================================================
-# ТЕСТЫ: WEB (заглушка)
+# ТЕСТЫ: WEB
 # =============================================================================
 
 test_web_unavailable() {
@@ -694,19 +805,35 @@ echo "  check_timeout: ${CHECK_TIMEOUT}s"
 echo "  WAIT_AFTER:    ${WAIT_AFTER}s"
 echo "=========================================="
 
+# Files
 test_files_create
 test_files_modify
 test_files_delete
+
+# Processes
 test_processes_new
 test_processes_stop
 test_processes_deleted_exe
+
+# Ports
 test_ports_new
 test_ports_close
+
+# Connections
 test_connections_bash
+
+# Services (systemd) — 6 тестов
 test_services_start
 test_services_stop
 test_services_restart
+test_services_enable_start
+test_services_disable_stop
+test_services_enable_multiple
+
+# Users
 test_users_ssh_keys
+
+# Web
 test_web_unavailable
 
 echo
