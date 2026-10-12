@@ -239,11 +239,11 @@ Compared: UID, primary GID, home, groups, `~/.ssh/authorized_keys`.
 | ---                                                                     | ---      | ---
 | `exclude`                                                               | []string | Skip processes if the Exe file contains the specified string.
 | `check_ppid`                                                            | bool     | Enables the filter by parent process ID, 0 (swapper) or 2 (kthreadd),
-| to filter kernel threads.
+| to filter kernel threads.                                               |          |
 | `prefixes`                                                              | []string | List of name prefixes. Used as a fallback when PPID doesn't help
-| (e.g., on non-Linux systems, or when /proc/<pid>/stat is unreadable).
-| Applied only when Exe is NOT available — a real process with a matching
-| name but a valid Exe will NOT be filtered.
+| (e.g., on non-Linux systems, or when /proc/<pid>/stat is unreadable).   |          | 
+| Applied only when Exe is NOT available — a real process with a matching |          |
+| name but a valid Exe will NOT be filtered.                              |          |
 
 Compared: PID, PPID, Name, Owner, Exe, Deleted, Suspicious.
 
