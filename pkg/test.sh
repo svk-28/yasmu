@@ -179,7 +179,7 @@ assert_in_log() {
 wait_and_check() {
     local needle="$1"; local label="$2"
     local deadline=$(( $(date +%s) + WAIT_AFTER + CHECK_TIMEOUT ))
-    log_info "Ждём сработки (до $((WAIT_AFTER + CHECK_TIMEOUT))с)..."
+    # log_info "Ждём сработки (до $((WAIT_AFTER + CHECK_TIMEOUT))с)..."
 
     while [ "$(date +%s)" -lt "$deadline" ]; do
         assert_yasmu_alive
