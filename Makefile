@@ -1,4 +1,4 @@
-VERSION := 1.0.1
+VERSION := $(shell grep -oP 'Version\s*=\s*"\K[0-9]+\.[0-9]+\.[0-9]+' main.go)
 ARCH    := amd64
 
 BIN     := bin/yasmu
