@@ -29,12 +29,14 @@ import (
     "yasmu/mainlibs"
     "yasmu/notifylibs"
     "yasmu/config"
+    "yasmu/logslibs"
 
     "github.com/sevlyar/go-daemon"
+     opensearch "github.com/opensearch-project/opensearch-go/v2"
 )
 
 const (
-	Version = "1.0.1"
+	Version = "1.0.2"
 )
 
 var (
@@ -43,16 +45,14 @@ var (
     MakeConfig  bool
     RunOnce     bool
     StopDaemon  bool
-)
-
-var (
+    HostName   string
     previousFileList    checklibs.FileList
     previousUrlList     checklibs.UrlList
     previousUsersList   checklibs.UserList
     previousServiceList checklibs.ServiceList
     previousProcessList checklibs.ProcessList
     previousPortList    checklibs.PortList
-
+    opensearchClient    *opensearch.Client
 )
 
 func runChecks(cfg *config.Config) {
@@ -64,7 +64,10 @@ func runChecks(cfg *config.Config) {
         resultOfWebCheck       string
         resultOfPortsCheck     string
         summaryReport          strings.Builder
+        summaryJSONReport      []map[string]string
     )
+    indexName := logslibs.ConvertIndexName(cfg.Log.OpenSearch.IndexName)
+
     // *********** Users Checks ***************
     if cfg.Checks.Users.Enable {
         previousUsersList, resultOfUsersCheck = checklibs.UsersCheck(previousUsersList)
@@ -73,6 +76,19 @@ func runChecks(cfg *config.Config) {
             log.Println(resultOfUsersCheck)
             fmt.Fprintf(&summaryReport, "\n========= Changes to the users have been recorded =========\n")
             summaryReport.WriteString(resultOfUsersCheck)
+            doc := logslibs.MakeJsonDocument(HostName, "users", "changed", resultOfUsersCheck)
+            summaryJSONReport = append(summaryJSONReport, doc)
+            if cfg.Log.OpenSearch.Enable && opensearchClient != nil && !cfg.Log.OpenSearch.Bulk {
+                // doc := logslibs.MakeJsonDocument(
+                    // HostName,            // FQDN хоста
+                    // "users",             // checkName
+                    // "changed",           // checkStatus
+                    // resultOfUsersCheck,  // текст отчёта
+                // )
+                if !logslibs.OsAddRecord(opensearchClient, indexName, doc) {
+                    log.Println("warn: failed to send 'users' check to OpenSearch")
+                }
+            }
         } else {
             log.Println("No user changes have been recorded.")
         }
@@ -89,6 +105,20 @@ func runChecks(cfg *config.Config) {
             log.Println(resultOfProcessesCheck)
             fmt.Fprintf(&summaryReport, "\n========= Changes in processes have been recorded =========\n")
             summaryReport.WriteString(resultOfProcessesCheck)
+            doc := logslibs.MakeJsonDocument(HostName, "processes", "changed", resultOfProcessesCheck)
+            summaryJSONReport = append(summaryJSONReport, doc)
+
+            if cfg.Log.OpenSearch.Enable && opensearchClient != nil && !cfg.Log.OpenSearch.Bulk {
+                // doc := logslibs.MakeJsonDocument(
+                    // HostName,
+                    // "processes",
+                    // "changed",
+                    // resultOfProcessesCheck,
+                // )
+                if !logslibs.OsAddRecord(opensearchClient, indexName, doc) {
+                    log.Println("warn: failed to send 'processes' check to OpenSearch")
+                }
+            }
         } else {
             log.Println("No process changes have been recorded.")
         }
@@ -114,6 +144,19 @@ func runChecks(cfg *config.Config) {
             log.Println(resultOfConnCheck)
             fmt.Fprintf(&summaryReport, "\n========= Connection rule violations have been recorded =========\n")
             summaryReport.WriteString(resultOfConnCheck)
+            doc := logslibs.MakeJsonDocument(HostName, "connections", "changed", resultOfConnCheck)
+            summaryJSONReport = append(summaryJSONReport, doc)
+            if cfg.Log.OpenSearch.Enable && opensearchClient != nil && !cfg.Log.OpenSearch.Bulk {
+                // doc := logslibs.MakeJsonDocument(
+                    // HostName,
+                    // "connections",
+                    // "changed",
+                    // resultOfConnCheck,
+                // )
+                if !logslibs.OsAddRecord(opensearchClient, indexName, doc) {
+                    log.Println("warn: failed to send 'connections' check to OpenSearch")
+                }
+            }
         } else {
             log.Println("No connection rule violations.")
         }
@@ -133,6 +176,19 @@ func runChecks(cfg *config.Config) {
             fmt.Fprintf(&summaryReport, "\n========= Changes in ports checks have been recorded =========\n")
             log.Println(resultOfPortsCheck)
             summaryReport.WriteString(resultOfPortsCheck)
+            doc := logslibs.MakeJsonDocument(HostName, "ports", "changed", resultOfPortsCheck)
+            summaryJSONReport = append(summaryJSONReport, doc)
+            if cfg.Log.OpenSearch.Enable && opensearchClient != nil && !cfg.Log.OpenSearch.Bulk {
+                // doc := logslibs.MakeJsonDocument(
+                    // HostName,
+                    // "ports",
+                    // "changed",
+                    // resultOfPortsCheck,
+                // )
+                if !logslibs.OsAddRecord(opensearchClient, indexName, doc) {
+                    log.Println("warn: failed to send 'ports' check to OpenSearch")
+                }
+            }
         } else {
             log.Println("No port changes have been recorded.")
         }
@@ -145,6 +201,19 @@ func runChecks(cfg *config.Config) {
             fmt.Fprintf(&summaryReport, "\n========= Changes in web checks have been recorded =========\n")
             log.Println(resultOfWebCheck)
             summaryReport.WriteString(resultOfWebCheck)
+            doc := logslibs.MakeJsonDocument(HostName, "web", "changed", resultOfWebCheck)
+            summaryJSONReport = append(summaryJSONReport, doc)
+            if cfg.Log.OpenSearch.Enable && opensearchClient != nil && !cfg.Log.OpenSearch.Bulk {
+                // doc := logslibs.MakeJsonDocument(
+                    // HostName,
+                    // "web",
+                    // "changed",
+                    // resultOfWebCheck,
+                // )
+                if !logslibs.OsAddRecord(opensearchClient, indexName, doc) {
+                    log.Println("warn: failed to send 'web' check to OpenSearch")
+                }
+            }
         } else {
             log.Println("No web changes have been recorded.")
         }
@@ -168,6 +237,19 @@ func runChecks(cfg *config.Config) {
 		    log.Println(resultOfFilesCheck)
             fmt.Fprintf(&summaryReport, "\n========= Changes to the file system have been recorded =========\n")
 		    summaryReport.WriteString(resultOfFilesCheck)
+            doc := logslibs.MakeJsonDocument( HostName, "files", "changed", resultOfFilesCheck)
+            summaryJSONReport = append(summaryJSONReport, doc)
+            if cfg.Log.OpenSearch.Enable && opensearchClient != nil && !cfg.Log.OpenSearch.Bulk {
+                // doc := logslibs.MakeJsonDocument(
+                    // HostName,
+                    // "files",
+                    // "changed",
+                    // resultOfFilesCheck,
+                // )
+                if !logslibs.OsAddRecord(opensearchClient, indexName, doc) {
+                    log.Println("warn: failed to send 'files' check to OpenSearch")
+                }
+            }
 	    } else {
 		    log.Println("No files changes have been recorded.")
 	    }
@@ -185,6 +267,19 @@ func runChecks(cfg *config.Config) {
             log.Println(resultOfServicesCheck)
             fmt.Fprintf(&summaryReport, "\n========= Changes to the services have been recorded =========\n")
             summaryReport.WriteString(resultOfServicesCheck)
+            doc := logslibs.MakeJsonDocument(HostName, "services", "changed", resultOfServicesCheck)
+            summaryJSONReport = append(summaryJSONReport, doc)
+            if cfg.Log.OpenSearch.Enable && opensearchClient != nil && !cfg.Log.OpenSearch.Bulk {
+                // doc := logslibs.MakeJsonDocument(
+                    // HostName,
+                    // "services",
+                    // "changed",
+                    // resultOfServicesCheck,
+                // )
+                if !logslibs.OsAddRecord(opensearchClient, indexName, doc) {
+                    log.Println("warn: failed to send 'services' check to OpenSearch")
+                }
+            }
         } else {
             log.Println("No service changes have been recorded.")
         }
@@ -195,6 +290,14 @@ func runChecks(cfg *config.Config) {
 		// log.Println("Result of all checks:", summaryReport.String())
 		SendNotifycation(cfg, summaryReport.String())
 	}
+
+    // *********** Sending Summary Report to OpenSearch***************
+    if cfg.Log.OpenSearch.Enable && opensearchClient != nil && cfg.Log.OpenSearch.Bulk {
+        if !logslibs.OsAddRecordsBulk(opensearchClient, indexName, summaryJSONReport) {
+            log.Println("warn: failed to send bulk report to OpenSearch")
+        }
+    }
+
 }
 
 func RunService(ctx context.Context, cfg *config.Config) {
@@ -221,7 +324,7 @@ func DaemonRun(cfg *config.Config) {
         cntxt := &daemon.Context{
         PidFileName: cfg.Daemon.PidFile,
         PidFilePerm: 0600,
-        LogFileName: cfg.Daemon.LogFile,
+        LogFileName: cfg.Log.LogFile.Path,
         LogFilePerm: 0600,
         WorkDir:     cfg.Daemon.WorkDir,
         Umask:       027,
@@ -286,12 +389,6 @@ func DaemonStop(pidFile string) error {
 }
 
 func SendNotifycation(cfg *config.Config, msg string) {
-	hostname, err := mainlibs.GetFQDN()
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Println("Running host FQDN:", hostname)
-
     // E-Mail notification
 	if cfg.Notify.Email.Enable {
 		var (
@@ -303,8 +400,8 @@ func SendNotifycation(cfg *config.Config, msg string) {
 
 		message.MailFrom = cfg.Notify.Email.MailFrom
 		message.MailTo = cfg.Notify.Email.MailTo
-		// %HOSTNAME% template in Subject will replace
-		message.MailSubject = strings.ReplaceAll(cfg.Notify.Email.MailSubject, "%HOSTNAME%", hostname)
+		// %HostName% template in Subject will replace
+		message.MailSubject = strings.ReplaceAll(cfg.Notify.Email.MailSubject, "%HostName%", HostName)
 		message.MailMessage = msg
 
 		smtpSession.SmtpServer = cfg.Notify.Email.Server
@@ -351,7 +448,7 @@ func SendNotifycation(cfg *config.Config, msg string) {
         if cfg.Notify.Webhook.Message.Format == "json" {
 	        escMsg = mainlibs.EscapeJSONString(msg)
         }
-        messageForSending := strings.ReplaceAll(cfg.Notify.Webhook.Message.Template, "%HOSTNAME%", hostname)
+        messageForSending := strings.ReplaceAll(cfg.Notify.Webhook.Message.Template, "%HostName%", HostName)
         messageForSending = strings.ReplaceAll(messageForSending, "%MESSAGE%", escMsg)
 
         ok, respBody := notifylibs.WebhookNotify(webhookSession, messageForSending)
@@ -462,6 +559,13 @@ func main() {
 		log.Fatal(err)
 	}
 
+	HostName, err := mainlibs.GetFQDN()
+	if err != nil {
+		log.Fatal(err)
+	} else {
+        	log.Println("Host name is:", HostName)
+    }
+
 	ctx, stop := signal.NotifyContext(context.Background(),
 		syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -472,6 +576,24 @@ func main() {
             log.Println("Daemon stop error:", err)
         }
         os.Exit(0)
+    }
+
+
+    if cfg.Log.OpenSearch.Enable {
+        opensearchClient = logslibs.OsConnect(cfg.Log.OpenSearch)
+        if opensearchClient != nil && cfg.Log.OpenSearch.CreateTemplate {
+             if err := logslibs.CreateIndexTemplate(
+                    opensearchClient,
+                    "monitoring-template",  // имя шаблона
+                    "monitoring-*",         // маска индексов
+            ); err != nil {
+                log.Printf("warn: ensure index template: %v", err)
+            }
+            if cfg.Log.OpenSearch.CreateIndex {
+                indexName := logslibs.ConvertIndexName(cfg.Log.OpenSearch.IndexName)
+                logslibs.OsCreateIndex(indexName, opensearchClient)
+            }
+        }
     }
 
     if RunAsDaemon {

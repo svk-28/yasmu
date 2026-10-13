@@ -380,19 +380,88 @@ notify:
         #   %HOSTNAME% — host FQDN
         #   %MESSAGE%  — report text (produced by all checks combined)
         template: '{"message":"Alert message from %HOSTNAME% %MESSAGE%"}'
-`
 
+  # Sending data to Zabbix.
+  zabbix:
+    enable: false
+    # Zabbix server hostname or IP address.
+    server: zabbix.server.com
+    # Zabbnix HTTP/HTTPS port.
+    port: 9200
+    # Protocol scheme: "http" or "https".
+    # Use "https" for TLS. See cert_verify below.
+    protocol: https
+    # Verify TLS certificate on HTTPS connections.
+    # Set to false only for self-signed certificates in test environments.
+    cert_verify: true
+    # Zabbix API user. Must have permissions to create hosts and items
+    # if create_hosts / create_items are enabled.
+    user: user
+    # Password.
+    password: "12345678"
+    # Create hosts in Zabbix automatically when they are not present.
+    # Requires appropriate API permissions and host group configuration.
+    create_hosts: false
+    # Create monitoring items (metrics) on Zabbix hosts automatically.
+    # Requires create_hosts or pre-existing hosts with correct templates.
+    create_items: true
+
+# Log section
+log:
+  # Daemon logfile full path.
+  file:
+      path: yasmu.log
+
+  # Opensearch (elasticsearch) reciever settings
+  # for results of checkins only!!!
+  opensearch:
+    enable: false
+    # OpenSearch server hostname or IP address.
+    server: opensearch.server.com
+    # OpenSearch HTTP/HTTPS port. Default: 9200.
+    port: 9200
+    # Protocol scheme: "http" or "https".
+    # Use "https" for TLS. See cert_verify below.
+    protocol: https
+    # Verify TLS certificate on HTTPS connections.
+    # Set to false only for self-signed certificates in test environments.
+    cert_verify: true
+    # OpenSearch user.
+    user: user
+    # OpenSearch password. Quote it if it contains YAML special characters.
+    password: password
+    # Create or update the index template at startup.
+    # The template defines mappings for all indices matching index_name pattern.
+    # Requires the user to have "indices:admin/index_template/put" permission.
+    create_template: true
+    # Create the index on the first write if it does not exist.
+    # When false, the index must exist (e.g. created by an admin or index template).
+    create_index: true
+    # Index name pattern. Date placeholders are expanded at runtime:
+    #   %YYYY% — 4-digit year   (e.g. 2026)
+    #   %YY%   — 2-digit year   (e.g. 26)
+    #   %MM%   — 2-digit month  (e.g. 10)
+    #   %DD%   — 2-digit day    (e.g. 13)
+    #   %HH%   — 2-digit hour   (e.g. 15)
+    #   %mm%   — 2-digit minute (e.g. 30)
+    #   %ss%   — 2-digit second (e.g. 45)
+    # Example: "monitoring-2026.10.13"
+    index_name: "monitoring-%YYYY%.%MM%.%DD%"
+    # Bulk indexing of documents
+    bulk: true
+`
 type Config struct {
-	Daemon DaemonConfig `yaml:"daemon"`
-	Checks ChecksConfig `yaml:"checks"`
-	Notify NotifyConfig `yaml:"notify"`
+    Daemon   DaemonConfig   `yaml:"daemon"`
+    Checks   ChecksConfig   `yaml:"checks"`
+    Notify   NotifyConfig   `yaml:"notify"`
+    Log      LogConfig      `yaml:"log"`
 }
 
 type DaemonConfig struct {
-	CheckTimeout int    `yaml:"check_timeout"`
-	LogFile      string `yaml:"log_file"`
-	WorkDir      string `yaml:"work_dir"`
-	PidFile      string `yaml:"pid_file"`
+    CheckTimeout int    `yaml:"check_timeout"`
+    LogFile      string `yaml:"log_file"`
+    WorkDir      string `yaml:"work_dir"`
+    PidFile      string `yaml:"pid_file"`
 }
 
 type ChecksConfig struct {
@@ -483,9 +552,10 @@ type PathWatch struct {
 }
 
 type NotifyConfig struct {
-	Email   EmailNotify   `yaml:"email"`
-	Matrix  MatrixNotify  `yaml:"matrix"`
-	Webhook WebhookNotify `yaml:"webhook"`
+    Email     EmailNotify     `yaml:"email"`
+    Matrix    MatrixNotify    `yaml:"matrix"`
+    Webhook   WebhookNotify   `yaml:"webhook"`
+    Zabbix    ZabbixNotify    `yaml:"zabbix"`
 }
 
 type EmailNotify struct {
@@ -519,6 +589,41 @@ type WebhookNotify struct {
 type WebhookMessage struct {
     Format    string `yaml:"format"`
     Template  string `yaml:"template"`
+}
+
+type ZabbixNotify struct {
+    Enable        bool     `yaml:"enable"`
+    Server        string   `yaml:"server"`
+    Port          int      `yaml:"port"`
+    User          string   `yaml:"user"`
+    Password      string   `yaml:"password"`
+    CreateHosts   string   `yaml:"create_hosts"`
+    CreateItems   string   `yaml:"create_items"`
+    NodeDiscover  string   `yaml:"node_discover"`
+}
+
+type LogConfig struct {
+    LogFile    LogFileConfig    `yaml:"file"`
+    OpenSearch OpenSearchConfig `yaml:"opensearch"`
+}
+
+type LogFileConfig struct {
+    Path string `yaml:"path"`
+}
+
+type OpenSearchConfig struct {
+    Enable           bool     `yaml:"enable"`
+    Server           string   `yaml:"server"`
+    Port             int      `yaml:"port"`
+    Protocol         string   `yaml:"protocol"`
+    User             string   `yaml:"user"`
+    Password         string   `yaml:"password"`
+    CertVerify       bool     `yaml:"cert_verify"`
+    DiscoverNode     bool     `yaml:"node_discover"`
+    IndexName        string   `yaml:"index_name"`
+    CreateIndex      bool     `yaml:"create_index"`
+    CreateTemplate   bool     `yaml:"create_template"`
+    Bulk             bool     `yaml:"bulk"`
 }
 
 func ConfigLoad(configFileName string) (*Config, error) {
