@@ -599,7 +599,6 @@ type ZabbixNotify struct {
     Password      string   `yaml:"password"`
     CreateHosts   string   `yaml:"create_hosts"`
     CreateItems   string   `yaml:"create_items"`
-    NodeDiscover  string   `yaml:"node_discover"`
 }
 
 type LogConfig struct {

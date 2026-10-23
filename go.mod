@@ -10,6 +10,7 @@ require (
 )
 
 require (
+	github.com/adubkov/go-zabbix v0.0.0-20170118040903-3c6a95ec4fdc // indirect
 	github.com/coreos/go-systemd/v22 v22.7.0 // indirect
 	github.com/ebitengine/purego v0.10.2 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect

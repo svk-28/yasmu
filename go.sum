@@ -1,3 +1,5 @@
+github.com/adubkov/go-zabbix v0.0.0-20170118040903-3c6a95ec4fdc h1:gqqI4ZPa7uwK+gX9Zgk2AweAh+2dX0FpETcXTsA2TrE=
+github.com/adubkov/go-zabbix v0.0.0-20170118040903-3c6a95ec4fdc/go.mod h1:ihDXRSVen590YHlXIrv00CcmRrL6pUho/Iwm3ZmM8n8=
 github.com/aws/aws-sdk-go v1.44.263/go.mod h1:aVsgQcEevwlmQ7qHE9I3h+dtQgpqhFB+i8Phjh7fkwI=
 github.com/aws/aws-sdk-go-v2 v1.18.0/go.mod h1:uzbQtefpm44goOPmdKyAlXSNcwlRgF3ePWVW6EtJvvw=
 github.com/aws/aws-sdk-go-v2/config v1.18.25/go.mod h1:dZnYpD5wTW/dQF0rRNLVypB396zWCcPiBIvdvSWHEg4=

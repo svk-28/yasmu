@@ -36,7 +36,7 @@ import (
 )
 
 const (
-	Version = "1.0.2"
+	Version = "1.0.4"
 )
 
 var (
@@ -45,7 +45,7 @@ var (
     MakeConfig  bool
     RunOnce     bool
     StopDaemon  bool
-    HostName   string
+    HostName    string
     previousFileList    checklibs.FileList
     previousUrlList     checklibs.UrlList
     previousUsersList   checklibs.UserList
@@ -68,6 +68,7 @@ func runChecks(cfg *config.Config) {
     )
     indexName := logslibs.ConvertIndexName(cfg.Log.OpenSearch.IndexName)
 
+    log.Println("Host name is:", HostName)
     // *********** Users Checks ***************
     if cfg.Checks.Users.Enable {
         previousUsersList, resultOfUsersCheck = checklibs.UsersCheck(previousUsersList)
@@ -396,12 +397,12 @@ func SendNotifycation(cfg *config.Config, msg string) {
 			smtpSession notifylibs.SmtpSession
 		)
 
-		log.Println("Running notifylibs/EmailNotify")
+		log.Println("Running notifylibs/EmailNotify on ", HostName)
 
 		message.MailFrom = cfg.Notify.Email.MailFrom
 		message.MailTo = cfg.Notify.Email.MailTo
-		// %HostName% template in Subject will replace
-		message.MailSubject = strings.ReplaceAll(cfg.Notify.Email.MailSubject, "%HostName%", HostName)
+		// %HOSTNAME% template in Subject will replace
+		message.MailSubject = strings.ReplaceAll(cfg.Notify.Email.MailSubject, "%HOSTNAME%", HostName)
 		message.MailMessage = msg
 
 		smtpSession.SmtpServer = cfg.Notify.Email.Server
@@ -448,7 +449,7 @@ func SendNotifycation(cfg *config.Config, msg string) {
         if cfg.Notify.Webhook.Message.Format == "json" {
 	        escMsg = mainlibs.EscapeJSONString(msg)
         }
-        messageForSending := strings.ReplaceAll(cfg.Notify.Webhook.Message.Template, "%HostName%", HostName)
+        messageForSending := strings.ReplaceAll(cfg.Notify.Webhook.Message.Template, "%HOSTNAME%", HostName)
         messageForSending = strings.ReplaceAll(messageForSending, "%MESSAGE%", escMsg)
 
         ok, respBody := notifylibs.WebhookNotify(webhookSession, messageForSending)
@@ -559,7 +560,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	HostName, err := mainlibs.GetFQDN()
+	HostName, err = mainlibs.GetFQDN()
 	if err != nil {
 		log.Fatal(err)
 	} else {
