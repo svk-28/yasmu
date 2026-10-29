@@ -70,6 +70,13 @@ At the end of the check cycle, the program can send the result to the specified 
 - Matrix — sends a message to the specified channel on the specified server via the Matrix messaging protocol.
 - webhook — the message is sent to any HTTP resource. The message can be either plain text or in JSON format (the format is set in the config).
 
+### Logging
+
+The daemon writes messages to the file specified in the config.
+
+Also, the program has the ability to send events (alerts) to OpenSearch (Elasticsearch). To do this, you should configure the corresponding parameters in the configuration file.
+For this mechanism to work, you need to create a user in OpenSearch and grant the necessary permissions. The template and index will be created automatically, provided the user has the required permissions.
+
 ### Operation Mode
 
 YASMU can be run both in the console and as a service (daemon).
@@ -365,6 +372,25 @@ Ports 465 (implicit TLS) and 587 (STARTTLS).
           template: '{"message":"Alert from %HOSTNAME%: %MESSAGE%"}'
 
 Macros: `%HOSTNAME%`, `%MESSAGE%`.
+
+
+### `log`
+
+    log:
+        file:
+            path: /var/log/yasmu.log
+    
+        opensearch:
+            enable: true
+            server: opensearch.domain.local
+            port: 9200
+            protocol: https
+            cert_verify: true
+            user: yasmu
+            password: '1234567'
+            create_index: true
+            create_template: true
+            index_name: "monitoring-%YYYY%.%MM%.%DD%"
 
 ---
 

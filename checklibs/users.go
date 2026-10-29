@@ -214,6 +214,7 @@ func GetUserInfo(userName string) (UserMeta, error) {
     meta.Name = usr.Username
     meta.UID = usr.Uid
     meta.HomeDir = usr.HomeDir
+    // log.Printf(">GetUserInfo", usr.Username, usr.Uid, usr.HomeDir)
 
     groupIds, err := usr.GroupIds()
     if err != nil {
@@ -266,6 +267,8 @@ func ReadSSHKeys(homeDir string) ([]SSHKey, bool, error) {
 
     authFile := filepath.Join(sshDir, "authorized_keys")
     f, err := os.Open(authFile)
+    // log.Printf("> ReadSSHKeys", homeDir, sshDir, authFile, f)
+
     if err != nil {
         if os.IsNotExist(err) {
             // .ssh есть, но authorized_keys нет — каталог считаем существующим.
@@ -287,7 +290,7 @@ func ReadSSHKeys(homeDir string) ([]SSHKey, bool, error) {
     if err := scanner.Err(); err != nil {
         return keys, true, err
     }
-
+    // log.Printf("Found ssh keys %s in the file %s", keys, authFile)
     return keys, true, nil
 }
 
