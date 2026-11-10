@@ -17,6 +17,7 @@ package config
 import (
 	"fmt"
 	"os"
+    "path/filepath"
 
 	"gopkg.in/yaml.v3"
 )
@@ -32,8 +33,6 @@ daemon:
   check_timeout: 60
   # PID file for the daemon.
   pid_file: /var/run/yasmu.pid
-  # Log file. Relative to work_dir unless absolute.
-  log_file: /var/log/yasmu.log
   # Working directory of the daemon. After daemonization the process chdirs here.
   # Relative paths in the config are resolved against it.
   work_dir: /var/lib/yasmu
@@ -381,36 +380,36 @@ notify:
         #   %MESSAGE%  — report text (produced by all checks combined)
         template: '{"message":"Alert message from %HOSTNAME% %MESSAGE%"}'
 
-  # Sending data to Zabbix.
-  zabbix:
-    enable: false
+  # Sending data to Zabbix - not impemented yet.
+  # zabbix:
+  #  enable: false
     # Zabbix server hostname or IP address.
-    server: zabbix.server.com
+    # server: zabbix.server.com
     # Zabbnix HTTP/HTTPS port.
-    port: 9200
+    # port: 9200
     # Protocol scheme: "http" or "https".
     # Use "https" for TLS. See cert_verify below.
-    protocol: https
+    # protocol: https
     # Verify TLS certificate on HTTPS connections.
     # Set to false only for self-signed certificates in test environments.
-    cert_verify: true
+    # cert_verify: true
     # Zabbix API user. Must have permissions to create hosts and items
     # if create_hosts / create_items are enabled.
-    user: user
+    # user: user
     # Password.
-    password: "12345678"
+    # password: "12345678"
     # Create hosts in Zabbix automatically when they are not present.
     # Requires appropriate API permissions and host group configuration.
-    create_hosts: false
+    # create_hosts: false
     # Create monitoring items (metrics) on Zabbix hosts automatically.
     # Requires create_hosts or pre-existing hosts with correct templates.
-    create_items: true
+    # create_items: true
 
 # Log section
 log:
   # Daemon logfile full path.
   file:
-      path: yasmu.log
+      path: /var/log/yasmu.log
 
   # Opensearch (elasticsearch) reciever settings
   # for results of checkins only!!!
@@ -628,7 +627,7 @@ type OpenSearchConfig struct {
 func ConfigLoad(configFileName string) (*Config, error) {
 	f, err := os.Open(configFileName)
     if err != nil {
-        return nil, fmt.Errorf("open config: %w\n\rTry running 'watchdog -make-config'", err)
+        return nil, fmt.Errorf("open config: %w\n\rTry running 'yasmu -make-config'", err)
     }
 	defer f.Close()
 
@@ -677,6 +676,12 @@ func ConfigMake(cfgTmpl, cfgFileName string) error {
 		return fmt.Errorf("config file already exists: %s", cfgFileName)
 	}
 
+    dir := filepath.Dir(cfgFileName)
+    if dir != "" && dir != "." {
+        if err := os.MkdirAll(dir, 0700); err != nil {
+            return fmt.Errorf("Create config directory %q: %w", dir, err)
+        }
+    }
 	file, err := os.Create(cfgFileName)
 	if err != nil {
 		return fmt.Errorf("create file: %w", err)

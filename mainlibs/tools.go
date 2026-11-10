@@ -52,3 +52,4 @@ func IsFile(path string) bool {
     }
     return !info.IsDir()
 }
+

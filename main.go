@@ -36,23 +36,30 @@ import (
 )
 
 const (
-	Version = "1.0.4"
+	Version = "1.0.5"
 )
 
 var (
-    ConfigFile  string
-    RunAsDaemon bool
-    MakeConfig  bool
-    RunOnce     bool
-    StopDaemon  bool
-    HostName    string
-    previousFileList    checklibs.FileList
-    previousUrlList     checklibs.UrlList
-    previousUsersList   checklibs.UserList
-    previousServiceList checklibs.ServiceList
-    previousProcessList checklibs.ProcessList
-    previousPortList    checklibs.PortList
-    opensearchClient    *opensearch.Client
+    ConfigFile            string
+    RunAsDaemon           bool
+    MakeConfig            bool
+    RunOnce               bool
+    StopDaemon            bool
+    HostName              string
+    InstallService        bool
+    RemoveService         bool
+    ServiceUser           string
+    ServiceGroup          string
+    ServiceUnitDir        string
+    Uninstall             bool
+    previousFileList      checklibs.FileList
+    previousUrlList       checklibs.UrlList
+    previousUsersList     checklibs.UserList
+    previousServiceList   checklibs.ServiceList
+    previousProcessList   checklibs.ProcessList
+    previousPortList      checklibs.PortList
+    opensearchClient      *opensearch.Client
+
 )
 
 func runChecks(cfg *config.Config) {
@@ -308,10 +315,13 @@ func DaemonRun(cfg *config.Config) {
     RunService(ctx, cfg)
     SaveState(cfg)
 
+    SendNotifycation(cfg, fmt.Sprintf("Daemon YASMU stopped on %s.", HostName))
+
     log.Println("Daemon stopped")
 }
 
-func DaemonStop(pidFile string) error {
+func DaemonStop(cfg *config.Config) error {
+    pidFile := cfg.Daemon.PidFile
     data, err := os.ReadFile(pidFile)
     if err != nil {
         if os.IsNotExist(err) {
@@ -342,7 +352,7 @@ func DaemonStop(pidFile string) error {
         }
         return fmt.Errorf("signal process %d: %w", pid, err)
     }
-
+    // SendNotifycation(cfg, "Daemon YASMU stopped.")
     log.Printf("Daemon (pid %d) stopped.\n", pid)
     return nil
 }
@@ -482,18 +492,47 @@ func LoadState(cfg *config.Config) {
     load("previousPortList", &previousPortList)
 }
 
+// printUsage печатает краткое описание и справку по флагам.
+func printUsage() {
+    fmt.Printf("YASMU - Yet Another System Monitoring Utility (version %s)\n", Version)
+    fmt.Printf("Home page: https://git.svk28.ru/svk/yasmu\n\n")
+    fmt.Println("Usage:")
+    fmt.Println("  yasmu [options]")
+    fmt.Println()
+    fmt.Println("Common scenarios:")
+    fmt.Println("  yasmu -make-config [-config /etc/yasmu/config.yaml]      Generate config file")
+    fmt.Println("  yasmu -install-service [-config /etc/yasmu/config.yaml]  Install systemd unit")
+    fmt.Println("  yasmu -uninstall [-config /etc/yasmu/config.yaml]        Uninstall and remove artifacts")
+    fmt.Println("  yasmu -run-once [-config /etc/yasmu/config.yaml]         Run all checks once")
+    fmt.Println("  yasmu -daemon-start [-config /etc/yasmu/config.yaml]     Run as daemon")
+    fmt.Println("  yasmu -daemon-stop [-config /etc/yasmu/config.yaml]      Stop daemon")
+    fmt.Println()
+    fmt.Println("Options:")
+    flag.PrintDefaults()
+}
 
 func main() {
-	flag.BoolVar(&RunAsDaemon, "daemon-start", false, "Run the programm as a daemon")
-	flag.BoolVar(&StopDaemon, "daemon-stop", false, "Stop the programm runing as a daemon")
-	flag.BoolVar(&RunOnce, "run-once", false, "Run the programm one time")
-	flag.StringVar(&ConfigFile, "config", "config.yaml", "Config file with full path")
-	flag.BoolVar(&MakeConfig, "make-config", false, "Generate config file")
-	flag.BoolFunc("version", "Version", func(s string) error {
-		log.Println("Version:", Version)
-		os.Exit(0)
-		return nil
-	})
+    flag.BoolVar(&RunAsDaemon, "daemon-start", false, "Run the programm as a daemon")
+    flag.BoolVar(&StopDaemon, "daemon-stop", false, "Stop the programm runing as a daemon")
+    flag.BoolVar(&RunOnce, "run-once", false, "Run the programm one time")
+    flag.StringVar(&ConfigFile, "config", "/etc/yasmu/config.yaml", "Config file with full path")
+    flag.BoolVar(&MakeConfig, "make-config", false, "Generate config file")
+    flag.BoolFunc("version", "Version", func(s string) error {
+        log.Println("Version:", Version)
+        os.Exit(0)
+        return nil
+    })
+    flag.BoolVar(&InstallService, "install-service", false, "Install systemd unit")
+    flag.BoolVar(&RemoveService, "remove-service", false, "Remove systemd unit")
+    flag.StringVar(&ServiceUser, "service-user", "root", "User for systemd unit")
+    flag.StringVar(&ServiceGroup, "service-group", "root", "Group for systemd unit")
+    flag.StringVar(&ServiceUnitDir, "service-unit-dir", "/etc/systemd/system", "Systemd unit directory")
+
+    if len(os.Args) < 2 {
+        printUsage()
+        os.Exit(0)
+    }
+
 	flag.Parse()
 
     // Disable log output
@@ -501,28 +540,64 @@ func main() {
     // log.SetFlags(0)
     // log.SetPrefix("")
     
-	if MakeConfig {
-		if err := config.ConfigMake(config.ConfigTemplate, ConfigFile); err != nil {
-			log.Fatal(err)
-		}
-		os.Exit(0)
-	}
+    if MakeConfig {
+	    if err := config.ConfigMake(config.ConfigTemplate, ConfigFile); err != nil {
+		    log.Fatal(err)
+	    }
+	    os.Exit(0)
+    }
+    
+    // systemd unit install/remove
+    if InstallService || RemoveService {
+        binPath, err := os.Executable()
+        if err != nil {
+            log.Fatal("cannot determine executable path: ", err)
+        }
+        binPath, _ = filepath.Abs(binPath)
+        
+        cfgPath, _ := filepath.Abs(ConfigFile)
+        
+        opts := config.SystemdInstallOptions{
+            BinaryPath:   binPath,
+            ConfigPath:   cfgPath,
+            UnitDir:      ServiceUnitDir,
+            UnitName:     "yasmu",
+            User:         ServiceUser,
+            Group:        ServiceGroup,
+            WorkDir:      "/var/lib/yasmu",
+            Description:  "YASMU system monitoring utility",
+            Overwrite:    true,
+            DaemonReload: true,
+            Enable:       true,
+        }
+        // log.Println(opts)
+        if InstallService {
+            if err := config.InstallSystemdUnit(opts); err != nil {
+                log.Fatal(err)
+            }
+        } else {
+            if err := config.RemoveSystemdUnit(opts); err != nil {
+                log.Fatal(err)
+            }
+        }
+        os.Exit(0)
+    }
 
 	cfg, err := config.ConfigLoad(ConfigFile)
 	if err != nil {
-		log.Fatal(err)
+        log.Fatal(err)
 	}
 
 	err = os.MkdirAll(cfg.Daemon.WorkDir, 0700)
-	if err != nil {
-		log.Fatal(err)
-	}
+    if err != nil {
+        log.Fatal(err)
+    }
 
 	HostName, err = mainlibs.GetFQDN()
-	if err != nil {
-		log.Fatal(err)
-	} else {
-        	log.Println("Host name is:", HostName)
+    if err != nil {
+        log.Fatal(err)
+    } else {
+        log.Println("Host name is:", HostName)
     }
 
 	ctx, stop := signal.NotifyContext(context.Background(),
@@ -530,7 +605,7 @@ func main() {
 	defer stop()
 
     if StopDaemon {
-        err = DaemonStop(cfg.Daemon.PidFile)
+        err = DaemonStop(cfg)
         if err != nil {
             log.Println("Daemon stop error:", err)
         }
@@ -548,14 +623,17 @@ func main() {
         if opensearchClient != nil && cfg.Log.OpenSearch.CreateTemplate {
              if err := logslibs.CreateIndexTemplate(
                     opensearchClient,
-                    "monitoring-template",  // имя шаблона
-                    "monitoring-*",         // маска индексов
+                    "monitoring-template",
+                    "monitoring-*",
             ); err != nil {
                 log.Printf("warn: ensure index template: %v", err)
             }
             if cfg.Log.OpenSearch.CreateIndex {
                 indexName := logslibs.ConvertIndexName(cfg.Log.OpenSearch.IndexName)
-                logslibs.OsCreateIndex(indexName, opensearchClient)
+                // logslibs.OsCreateIndex(indexName, opensearchClient)
+                if err := logslibs.OsCreateIndex(indexName, opensearchClient); err != nil {
+                    log.Printf("warn: create index %q: %v", indexName, err)
+                }
             }
         }
     }

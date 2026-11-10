@@ -52,5 +52,5 @@ install -m 0644 config.yaml %{buildroot}/etc/yasmu/config.yaml
 /etc/yasmu/yasmu.yaml
 
 %changelog
-* Mon Oct 05 2026 Sergey Kalinin <your@email.com> - 0.1.0-1
+* Mon Oct 05 2026 Sergey Kalinin <your@email.com> - 1.0.4-1
 - Initial package
